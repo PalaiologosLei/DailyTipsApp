@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import re
 from pathlib import Path
@@ -28,7 +28,7 @@ def parse_markdown_text(text: str, source_path: Path) -> list[KnowledgeItem]:
             continue
 
         title = title_match.group(1).strip()
-        child_lines, next_index = _collect_direct_children(lines, index + 1, indent)
+        child_lines = _collect_direct_children(lines, index + 1, indent)
         if not child_lines:
             continue
 
@@ -47,15 +47,10 @@ def parse_markdown_text(text: str, source_path: Path) -> list[KnowledgeItem]:
             )
         )
 
-        if next_index <= index:
-            continue
-
     return items
 
 
-def _collect_direct_children(
-    lines: list[str], start_index: int, parent_indent: int
-) -> tuple[list[tuple[int, str]], int]:
+def _collect_direct_children(lines: list[str], start_index: int, parent_indent: int) -> list[tuple[int, str]]:
     candidate_lines: list[tuple[int, str]] = []
     child_indent: int | None = None
     index = start_index
@@ -78,7 +73,7 @@ def _collect_direct_children(
 
         index += 1
 
-    return candidate_lines, index
+    return candidate_lines
 
 
 def _parse_line(raw_line: str) -> tuple[int, str] | None:

@@ -1,21 +1,23 @@
-# DailyTipsApp
+﻿# DailyTipsApp
 
-一个最小可用的本地 Python 脚本项目，用来：
+一个最小可用的本地 Python 工具，用来：
 
-1. 递归扫描笔记库中的 Markdown 文件
-2. 提取满足指定缩进规则的公式/知识点
-3. 为每个条目生成白底黑字的竖屏图片
-4. 将生成结果输出到当前仓库
-5. 自动执行 `git add` / `git commit` / `git push`
+1. 递归扫描 Markdown 笔记
+2. 提取符合规则的公式/知识点
+3. 生成白底黑字的竖屏图片
+4. 输出到当前仓库
+5. 可选执行 `git add` / `git commit` / `git push`
 
 ## 项目结构
 
 ```text
 src/
-  __init__.py
+  app.py
   git_sync.py
+  gui.py
   main.py
   models.py
+  note_source.py
   parser.py
   renderer.py
   scanner.py
@@ -25,9 +27,21 @@ tests/
 requirements.txt
 ```
 
+## 支持的输入来源
+
+- 本地笔记目录
+- GitHub 公开仓库 URL
+
+支持的 GitHub URL 形式：
+
+- `https://github.com/owner/repo`
+- `https://github.com/owner/repo/tree/main/subfolder`
+
+如果仓库根 URL 没写分支，程序会依次尝试 `main` 和 `master`。
+
 ## Markdown 识别格式
 
-程序识别以下结构：
+程序识别如下结构：
 
 ```markdown
 - 【牛顿-莱布尼茨公式】
@@ -49,28 +63,41 @@ requirements.txt
 pip install -r requirements.txt
 ```
 
-如果你使用 conda，也可以在已激活环境中执行同样命令。
+## 命令行运行
 
-## 运行方式
+解析本地目录：
 
 ```bash
 python -m src.main --notes-dir "D:\path\to\DailyTips"
 ```
 
+解析 GitHub 公开仓库：
+
+```bash
+python -m src.main --github-url "https://github.com/PalaiologosLei/DailyTips"
+```
+
 常用参数：
 
-- `--notes-dir`：笔记库根目录，必填
 - `--output-dir`：图片输出目录，默认 `output/images`
 - `--width`：图片宽度，默认 `1179`
 - `--height`：图片高度，默认 `2556`
-- `--skip-git`：只生成图片，不执行 git 提交推送
+- `--skip-git`：只生成图片，不执行 git 提交和推送
 - `--commit-message`：自定义提交信息
+- `--gui`：启动图形界面
 
-## 输出结果
+## GUI 运行
 
-- 生成的图片默认保存在 [output/images](D:/Coding/DailyTipsApp/output/images)
-- 每张图片包含标题、正文和说明列表
-- 图片为白底黑字、适合手机竖屏阅读
+```bash
+python -m src.main --gui
+```
+
+GUI 支持：
+
+- 选择本地 Markdown 目录
+- 输入 GitHub 公开仓库地址
+- 设置输出目录和图片尺寸
+- 勾选是否跳过 git 提交
 
 ## 测试
 
