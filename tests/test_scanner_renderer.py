@@ -5,6 +5,7 @@ import unittest
 
 from PIL import Image
 
+from src.cloud_sync import sync_images_to_cloud
 from src.models import KnowledgeItem
 from src.renderer import MANIFEST_NAME, _split_formula_content, render_item, render_items
 from src.scanner import find_markdown_files
@@ -92,6 +93,22 @@ class ScannerRendererTests(unittest.TestCase):
     def test_splits_formula_content_with_chinese(self) -> None:
         parts = _split_formula_content("E(XY)=E(X)E(Y) X,Y 独立")
         self.assertEqual(parts, [("math", "E(XY)=E(X)E(Y) X,Y "), ("text", "独立")])
+
+    def test_sync_images_to_cloud_copies_and_deletes(self) -> None:
+        source_dir = self.temp_root / "source"
+        cloud_dir = self.temp_root / "cloud"
+        source_dir.mkdir()
+        cloud_dir.mkdir()
+        (source_dir / "a.png").write_bytes(b"a")
+        (source_dir / "b.png").write_bytes(b"b")
+        (cloud_dir / "old.png").write_bytes(b"old")
+
+        summary = sync_images_to_cloud(source_dir, cloud_dir)
+
+        self.assertEqual(summary.copied_count, 2)
+        self.assertEqual(summary.deleted_count, 1)
+        self.assertTrue((cloud_dir / "a.png").exists())
+        self.assertFalse((cloud_dir / "old.png").exists())
 
 
 if __name__ == "__main__":

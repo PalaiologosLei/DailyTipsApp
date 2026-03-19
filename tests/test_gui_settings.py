@@ -31,17 +31,16 @@ class GuiSettingsTests(unittest.TestCase):
                 "local_path": "D:/notes",
                 "github_url": "https://github.com/example/repo",
                 "output_dir": "output/images",
+                "cloud_dir": "C:/Users/test/iCloudDrive/DailyTips",
                 "width": "1000",
                 "height": "2000",
-                "commit_message": "test",
-                "skip_git": True,
             },
         )
 
         loaded = load_gui_settings(self.settings_path)
         self.assertEqual(loaded["language"], "en")
         self.assertEqual(loaded["source_mode"], "github")
-        self.assertEqual(loaded["skip_git"], True)
+        self.assertEqual(loaded["cloud_dir"], "C:/Users/test/iCloudDrive/DailyTips")
         raw = json.loads(self.settings_path.read_text(encoding="utf-8"))
         self.assertEqual(raw["width"], "1000")
 

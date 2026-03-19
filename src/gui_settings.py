@@ -9,10 +9,9 @@ DEFAULT_GUI_SETTINGS = {
     "local_path": "",
     "github_url": "https://github.com/PalaiologosLei/DailyTips",
     "output_dir": "output/images",
+    "cloud_dir": "C:/Users/lky14/iCloudDrive/DailyTips",
     "width": "1179",
     "height": "2556",
-    "commit_message": "",
-    "skip_git": False,
 }
 
 

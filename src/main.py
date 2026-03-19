@@ -15,10 +15,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--notes-dir", help="Root directory of a local markdown notes repository.")
     parser.add_argument("--github-url", help="GitHub public repository URL, such as https://github.com/owner/repo.")
     parser.add_argument("--output-dir", default="output/images", help="Directory used to save generated images.")
+    parser.add_argument("--cloud-dir", help="Directory in iCloud, OneDrive, or another synced folder used to publish images.")
     parser.add_argument("--width", type=int, default=DEFAULT_WIDTH, help="Image width in pixels.")
     parser.add_argument("--height", type=int, default=DEFAULT_HEIGHT, help="Image height in pixels.")
-    parser.add_argument("--skip-git", action="store_true", help="Generate images only and skip git add/commit/push.")
-    parser.add_argument("--commit-message", default=None, help="Custom git commit message.")
     parser.add_argument("--gui", action="store_true", help="Launch the simple desktop GUI.")
     return parser
 
@@ -44,10 +43,9 @@ def main() -> int:
             notes_dir=Path(args.notes_dir).expanduser().resolve() if args.notes_dir else None,
             github_url=args.github_url,
             output_dir_arg=args.output_dir,
+            cloud_dir=Path(args.cloud_dir).expanduser() if args.cloud_dir else None,
             width=args.width,
             height=args.height,
-            skip_git=args.skip_git,
-            commit_message=args.commit_message,
         )
     except AppError as error:
         print(str(error), file=sys.stderr)
@@ -57,15 +55,16 @@ def main() -> int:
     print(f"Scanned markdown files: {summary.markdown_file_count}")
     print(f"Extracted items: {summary.item_count}")
     print(f"Generated images: {summary.image_count}")
-    print(f"Created: {summary.created_count}, Updated: {summary.updated_count}, Unchanged: {summary.unchanged_count}, Deleted: {summary.deleted_count}")
+    print(
+        f"Created: {summary.created_count}, Updated: {summary.updated_count}, "
+        f"Unchanged: {summary.unchanged_count}, Deleted: {summary.deleted_count}"
+    )
     print(f"Output directory: {summary.output_dir}")
-
-    if args.skip_git:
-        print("Git sync skipped.")
-    elif summary.git_pushed:
-        print("Git sync completed.")
+    if summary.cloud_dir is not None:
+        print(f"Cloud directory: {summary.cloud_dir}")
+        print(f"Cloud copied: {summary.cloud_copied_count}, Cloud deleted: {summary.cloud_deleted_count}")
     else:
-        print("No git changes detected.")
+        print("Cloud sync skipped.")
 
     return 0
 

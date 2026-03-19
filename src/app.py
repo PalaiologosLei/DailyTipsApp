@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-from .git_sync import GitSyncError, commit_and_push
+from .cloud_sync import CloudSyncError, sync_images_to_cloud
 from .note_source import materialize_notes_source
 from .parser import parse_markdown_file
 from .renderer import render_items
@@ -21,11 +21,13 @@ class RunSummary:
     item_count: int
     image_count: int
     output_dir: Path
-    git_pushed: bool
+    cloud_dir: Path | None
     created_count: int
     updated_count: int
     unchanged_count: int
     deleted_count: int
+    cloud_copied_count: int
+    cloud_deleted_count: int
 
 
 def run_app(
@@ -33,10 +35,9 @@ def run_app(
     notes_dir: Path | None,
     github_url: str | None,
     output_dir_arg: str,
+    cloud_dir: Path | None,
     width: int,
     height: int,
-    skip_git: bool,
-    commit_message: str | None,
 ) -> RunSummary:
     output_dir = (repo_dir / output_dir_arg).resolve()
 
@@ -53,12 +54,16 @@ def run_app(
 
         render_summary = render_items(items, output_dir, width=width, height=height)
 
-        git_pushed = False
-        if not skip_git:
+        cloud_copied_count = 0
+        cloud_deleted_count = 0
+        resolved_cloud_dir = cloud_dir.resolve() if cloud_dir is not None else None
+        if resolved_cloud_dir is not None:
             try:
-                git_pushed = commit_and_push(repo_dir, commit_message=commit_message)
-            except GitSyncError as error:
-                raise AppError(f"Git sync failed: {error}") from error
+                cloud_summary = sync_images_to_cloud(output_dir, resolved_cloud_dir)
+            except CloudSyncError as error:
+                raise AppError(f"Cloud sync failed: {error}") from error
+            cloud_copied_count = cloud_summary.copied_count
+            cloud_deleted_count = cloud_summary.deleted_count
 
         return RunSummary(
             source_description=source.description,
@@ -66,11 +71,13 @@ def run_app(
             item_count=len(items),
             image_count=render_summary.image_count,
             output_dir=output_dir,
-            git_pushed=git_pushed,
+            cloud_dir=resolved_cloud_dir,
             created_count=render_summary.created_count,
             updated_count=render_summary.updated_count,
             unchanged_count=render_summary.unchanged_count,
             deleted_count=len(render_summary.deleted_paths),
+            cloud_copied_count=cloud_copied_count,
+            cloud_deleted_count=cloud_deleted_count,
         )
     finally:
         source.cleanup()

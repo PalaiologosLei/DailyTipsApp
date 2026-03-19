@@ -3,4 +3,6 @@
 .tmp_tests/
 .tmp_downloads/
 output/test_images/
+output/images/*.png
+output/images/.manifest.json
 .gui_settings.json

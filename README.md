@@ -6,14 +6,14 @@
 2. 提取符合规则的公式/知识点
 3. 生成白底黑字的竖屏图片
 4. 输出到当前仓库
-5. 可选执行 `git add` / `git commit` / `git push`
+5. 将图片同步复制到你选择的云盘目录，例如 iCloud Drive 或 OneDrive
 
 ## 项目结构
 
 ```text
 src/
   app.py
-  git_sync.py
+  cloud_sync.py
   gui.py
   gui_settings.py
   main.py
@@ -75,9 +75,17 @@ GUI 支持：
 - 中文 / English 切换
 - 选择本地 Markdown 目录
 - 输入 GitHub 公开仓库地址
-- 设置输出目录和图片尺寸
-- 勾选是否跳过 git 提交
+- 设置项目输出目录和云盘目录
 - 自动将上次使用的语言、路径、地址、尺寸等保存到 `.gui_settings.json`
+
+`云盘目录` 可以是：
+
+- `C:\Users\lky14\iCloudDrive\DailyTips`
+- OneDrive 同步目录
+- Dropbox 同步目录
+- 其他本地同步盘目录
+
+应用本身只负责把图片复制到这个目录，不关心背后是哪个云服务。
 
 ## 安装依赖
 
@@ -87,37 +95,37 @@ pip install -r requirements.txt
 
 ## 命令行运行
 
-解析本地目录：
+解析本地目录并同步到 iCloud 目录：
 
 ```bash
-python -m src.main --notes-dir "D:\path\to\DailyTips"
+python -m src.main --notes-dir "D:\path\to\DailyTips" --cloud-dir "C:\Users\lky14\iCloudDrive\DailyTips"
 ```
 
-解析 GitHub 公开仓库：
+解析 GitHub 公开仓库并同步到云盘目录：
 
 ```bash
-python -m src.main --github-url "https://github.com/PalaiologosLei/DailyTips"
+python -m src.main --github-url "https://github.com/PalaiologosLei/DailyTips" --cloud-dir "C:\Users\lky14\iCloudDrive\DailyTips"
 ```
 
 常用参数：
 
-- `--output-dir`：图片输出目录，默认 `output/images`
+- `--output-dir`：项目内图片输出目录，默认 `output/images`
+- `--cloud-dir`：云盘同步目录，例如 iCloud Drive 目录
 - `--width`：图片宽度，默认 `1179`
 - `--height`：图片高度，默认 `2556`
-- `--skip-git`：只生成图片，不执行 git 提交和推送
-- `--commit-message`：自定义提交信息
 - `--gui`：启动图形界面
 
 ## 文件管理策略
 
-为了减少重复生成和无意义提交，程序现在会：
+为了减少重复生成和无意义复制，程序现在会：
 
 - 为每个条目计算内容哈希
 - 未变化的图片不重新生成
 - 已删除的条目对应图片会自动删除
 - 在 `output/images/.manifest.json` 中记录当前生成状态
+- 每次将当前全部图片镜像到云盘目录，并删除云盘目录里已过期的旧图片
 
-这能显著减缓仓库体积增长，但不能自动缩小已经存在的 Git 历史。如果历史里已经积累了很多旧图片版本，真正缩小仓库体积通常仍需要额外做历史重写，或者改用 Git LFS / 外部对象存储。
+当前项目不再自动执行 `git add` / `git commit` / `git push`，图片也不再以 GitHub 仓库作为分发存储。
 
 ## 测试
 
