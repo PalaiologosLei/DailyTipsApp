@@ -57,6 +57,7 @@ def main() -> int:
     print(f"Scanned markdown files: {summary.markdown_file_count}")
     print(f"Extracted items: {summary.item_count}")
     print(f"Generated images: {summary.image_count}")
+    print(f"Created: {summary.created_count}, Updated: {summary.updated_count}, Unchanged: {summary.unchanged_count}, Deleted: {summary.deleted_count}")
     print(f"Output directory: {summary.output_dir}")
 
     if args.skip_git:

@@ -1,11 +1,12 @@
 ﻿from pathlib import Path
+import json
 import shutil
 import unittest
 
 from PIL import Image
 
 from src.models import KnowledgeItem
-from src.renderer import render_item
+from src.renderer import MANIFEST_NAME, render_item, render_items
 from src.scanner import find_markdown_files
 
 
@@ -45,6 +46,48 @@ class ScannerRendererTests(unittest.TestCase):
         self.assertTrue(output_path.exists())
         with Image.open(output_path) as image:
             self.assertEqual(image.size, (600, 1000))
+
+    def test_render_items_skips_unchanged_files(self) -> None:
+        output_dir = self.temp_root / "images"
+        item = KnowledgeItem(
+            title="Test Title",
+            body="Body content used to verify incremental rendering.",
+            notes=["Note one"],
+            source_path=Path("note.md"),
+            source_line=1,
+        )
+
+        first = render_items([item], output_dir, width=600, height=1000)
+        second = render_items([item], output_dir, width=600, height=1000)
+
+        self.assertEqual(first.created_count, 1)
+        self.assertEqual(second.unchanged_count, 1)
+        manifest_path = output_dir / MANIFEST_NAME
+        self.assertTrue(manifest_path.exists())
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual(len(manifest["items"]), 1)
+
+    def test_render_items_deletes_stale_files(self) -> None:
+        output_dir = self.temp_root / "images"
+        first_item = KnowledgeItem(
+            title="First",
+            body="Body one",
+            notes=[],
+            source_path=Path("note.md"),
+            source_line=1,
+        )
+        second_item = KnowledgeItem(
+            title="Second",
+            body="Body two",
+            notes=[],
+            source_path=Path("note.md"),
+            source_line=2,
+        )
+
+        render_items([first_item, second_item], output_dir, width=600, height=1000)
+        summary = render_items([first_item], output_dir, width=600, height=1000)
+
+        self.assertEqual(len(summary.deleted_paths), 1)
 
 
 if __name__ == "__main__":

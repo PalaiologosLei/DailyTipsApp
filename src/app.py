@@ -22,6 +22,10 @@ class RunSummary:
     image_count: int
     output_dir: Path
     git_pushed: bool
+    created_count: int
+    updated_count: int
+    unchanged_count: int
+    deleted_count: int
 
 
 def run_app(
@@ -47,7 +51,7 @@ def run_app(
         for markdown_file in markdown_files:
             items.extend(parse_markdown_file(markdown_file))
 
-        render_results = render_items(items, output_dir, width=width, height=height)
+        render_summary = render_items(items, output_dir, width=width, height=height)
 
         git_pushed = False
         if not skip_git:
@@ -60,9 +64,13 @@ def run_app(
             source_description=source.description,
             markdown_file_count=len(markdown_files),
             item_count=len(items),
-            image_count=len(render_results),
+            image_count=render_summary.image_count,
             output_dir=output_dir,
             git_pushed=git_pushed,
+            created_count=render_summary.created_count,
+            updated_count=render_summary.updated_count,
+            unchanged_count=render_summary.unchanged_count,
+            deleted_count=len(render_summary.deleted_paths),
         )
     finally:
         source.cleanup()

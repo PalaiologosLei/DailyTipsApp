@@ -1,12 +1,14 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import hashlib
+import io
+import json
 import re
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-from .models import KnowledgeItem, RenderResult
+from .models import KnowledgeItem, RenderResult, RenderSummary
 
 DEFAULT_WIDTH = 1179
 DEFAULT_HEIGHT = 2556
@@ -20,6 +22,9 @@ LINE_SPACING = 14
 TITLE_SIZE = 76
 BODY_SIZE = 56
 NOTE_SIZE = 42
+MANIFEST_NAME = ".manifest.json"
+RENDERER_VERSION = "2"
+INLINE_MATH_PATTERN = re.compile(r"(\$[^$]+\$)")
 
 WINDOWS_FONT_CANDIDATES = [
     Path(r"C:\Windows\Fonts\msyh.ttc"),
@@ -28,17 +33,65 @@ WINDOWS_FONT_CANDIDATES = [
     Path(r"C:\Windows\Fonts\simsun.ttc"),
 ]
 
+try:
+    from matplotlib.mathtext import math_to_image
+
+    MATPLOTLIB_AVAILABLE = True
+except ImportError:
+    math_to_image = None
+    MATPLOTLIB_AVAILABLE = False
+
 
 def render_items(
     items: list[KnowledgeItem], output_dir: Path, width: int = DEFAULT_WIDTH, height: int = DEFAULT_HEIGHT
-) -> list[RenderResult]:
+) -> RenderSummary:
     output_dir.mkdir(parents=True, exist_ok=True)
-    results: list[RenderResult] = []
+    manifest_path = output_dir / MANIFEST_NAME
+    manifest = _load_manifest(manifest_path)
+    previous_entries = manifest.get("items", {})
+    current_entries: dict[str, dict[str, str]] = {}
+    summary = RenderSummary(manifest_path=manifest_path)
+
     for item in items:
-        image_path = output_dir / _build_filename(item)
-        render_item(item, image_path, width=width, height=height)
-        results.append(RenderResult(item=item, image_path=image_path))
-    return results
+        item_key = _build_item_key(item)
+        file_name = _build_filename(item)
+        image_path = output_dir / file_name
+        content_hash = _build_content_hash(item, width=width, height=height)
+        previous = previous_entries.get(item_key)
+
+        if previous and previous.get("hash") == content_hash and image_path.exists():
+            summary.results.append(RenderResult(item=item, image_path=image_path, status="unchanged"))
+            summary.unchanged_count += 1
+        else:
+            existed_before = image_path.exists()
+            render_item(item, image_path, width=width, height=height)
+            if previous or existed_before:
+                status = "updated"
+                summary.updated_count += 1
+            else:
+                status = "created"
+                summary.created_count += 1
+            summary.results.append(RenderResult(item=item, image_path=image_path, status=status))
+
+        current_entries[item_key] = {"file": file_name, "hash": content_hash}
+
+    old_files = {entry.get("file") for entry in previous_entries.values() if entry.get("file")}
+    current_files = {entry["file"] for entry in current_entries.values()}
+    stale_files = sorted(old_files - current_files)
+    for file_name in stale_files:
+        stale_path = output_dir / file_name
+        if stale_path.exists():
+            stale_path.unlink()
+        summary.deleted_paths.append(stale_path)
+
+    new_manifest = {
+        "version": RENDERER_VERSION,
+        "items": current_entries,
+    }
+    if new_manifest != manifest or summary.deleted_paths:
+        manifest_path.write_text(json.dumps(new_manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    return summary
 
 
 def render_item(item: KnowledgeItem, output_path: Path, width: int = DEFAULT_WIDTH, height: int = DEFAULT_HEIGHT) -> None:
@@ -52,39 +105,30 @@ def render_item(item: KnowledgeItem, output_path: Path, width: int = DEFAULT_WID
     max_width = width - MARGIN_X * 2
     y = MARGIN_TOP
 
-    y = _draw_block(draw, item.title, title_font, max_width, MARGIN_X, y)
+    y = _draw_rich_block(image, draw, item.title, title_font, max_width, MARGIN_X, y)
     y += BLOCK_SPACING
-    y = _draw_block(draw, item.body, body_font, max_width, MARGIN_X, y)
+    y = _draw_rich_block(image, draw, item.body, body_font, max_width, MARGIN_X, y)
     y += BLOCK_SPACING
-
-    remaining_height = height - MARGIN_BOTTOM - y
-    note_lines_budget = None
-    if item.notes:
-        line_height = _line_height(note_font)
-        note_lines_budget = max(1, remaining_height // max(1, line_height))
 
     for note_index, note in enumerate(item.notes):
-        if note_lines_budget is not None and note_lines_budget <= 0:
+        if y + _line_height(note_font) > height - MARGIN_BOTTOM:
             break
 
         prefix = f"{note_index + 1}. "
-        lines = wrap_text(f"{prefix}{note}", note_font, max_width, draw)
-        if note_lines_budget is not None and len(lines) > note_lines_budget:
-            lines = lines[:note_lines_budget]
-            lines[-1] = _truncate_line(lines[-1], note_font, max_width, draw)
-
-        for line in lines:
-            if y + _line_height(note_font) > height - MARGIN_BOTTOM:
-                break
-            draw.text((MARGIN_X, y), line, fill=FOREGROUND, font=note_font)
-            y += _line_height(note_font)
-
+        y = _draw_rich_block(
+            image,
+            draw,
+            f"{prefix}{note}",
+            note_font,
+            max_width,
+            MARGIN_X,
+            y,
+            max_bottom=height - MARGIN_BOTTOM,
+            truncate=True,
+        )
         if y + BLOCK_SPACING > height - MARGIN_BOTTOM:
             break
-
         y += 18
-        if note_lines_budget is not None:
-            note_lines_budget -= len(lines)
 
     image.save(output_path)
 
@@ -113,18 +157,155 @@ def wrap_text(text: str, font: ImageFont.FreeTypeFont | ImageFont.ImageFont, max
     return lines or [text]
 
 
-def _draw_block(
+def _draw_rich_block(
+    image: Image.Image,
     draw: ImageDraw.ImageDraw,
     text: str,
     font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
     max_width: int,
     x: int,
     y: int,
+    max_bottom: int | None = None,
+    truncate: bool = False,
 ) -> int:
-    for line in wrap_text(text, font, max_width, draw):
-        draw.text((x, y), line, fill=FOREGROUND, font=font)
+    tokens = _tokenize(text, font, draw, max_width)
+    lines = _layout_tokens(tokens, max_width)
+
+    available_bottom = max_bottom if max_bottom is not None else 10**9
+    truncated = False
+
+    for line in lines:
+        line_height = max((int(token["height"]) for token in line), default=_line_height(font))
+        if y + line_height > available_bottom:
+            truncated = True
+            break
+
+        cursor_x = x
+        for token in line:
+            token_y = y + max(0, (line_height - int(token["height"])) // 2)
+            if token["kind"] == "text":
+                draw.text((cursor_x, token_y), str(token["text"]), fill=FOREGROUND, font=font)
+            else:
+                token_image = token["image"]
+                image.paste(token_image, (cursor_x, token_y), token_image)
+            cursor_x += int(token["width"])
+
+        y += line_height + LINE_SPACING
+
+    if truncate and truncated and y + _line_height(font) <= available_bottom:
+        draw.text((x, y), "...", fill=FOREGROUND, font=font)
         y += _line_height(font)
+
     return y
+
+
+def _tokenize(
+    text: str,
+    font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+    draw: ImageDraw.ImageDraw,
+    max_width: int,
+) -> list[dict[str, object]]:
+    tokens: list[dict[str, object]] = []
+    paragraphs = text.splitlines() or [""]
+    for paragraph_index, paragraph in enumerate(paragraphs):
+        parts = INLINE_MATH_PATTERN.split(paragraph)
+        for part in parts:
+            if not part:
+                continue
+
+            if part.startswith("$") and part.endswith("$") and len(part) >= 2:
+                math_token = _build_math_token(part, max_width)
+                if math_token is not None:
+                    tokens.append(math_token)
+                    continue
+
+            for char in part:
+                tokens.append(
+                    {
+                        "kind": "text",
+                        "text": char,
+                        "width": _text_width(char, font, draw),
+                        "height": _line_height(font),
+                    }
+                )
+
+        if paragraph_index < len(paragraphs) - 1:
+            tokens.append({"kind": "newline", "width": 0, "height": _line_height(font)})
+
+    return tokens
+
+
+def _layout_tokens(tokens: list[dict[str, object]], max_width: int) -> list[list[dict[str, object]]]:
+    lines: list[list[dict[str, object]]] = []
+    current_line: list[dict[str, object]] = []
+    current_width = 0
+
+    for token in tokens:
+        if token["kind"] == "newline":
+            lines.append(current_line)
+            current_line = []
+            current_width = 0
+            continue
+
+        token_width = int(token["width"])
+        if current_line and current_width + token_width > max_width:
+            lines.append(current_line)
+            current_line = [token]
+            current_width = token_width
+        else:
+            current_line.append(token)
+            current_width += token_width
+
+    if current_line or not lines:
+        lines.append(current_line)
+
+    return lines
+
+
+def _build_math_token(formula: str, max_width: int) -> dict[str, object] | None:
+    if not MATPLOTLIB_AVAILABLE or math_to_image is None:
+        return None
+
+    buffer = io.BytesIO()
+    try:
+        math_to_image(formula, buffer, dpi=220, format="png", color=FOREGROUND)
+    except Exception:
+        return None
+
+    buffer.seek(0)
+    image = Image.open(buffer).convert("RGBA")
+    image = _crop_rgba(image)
+    if image.width == 0 or image.height == 0:
+        return None
+
+    if image.width > max_width:
+        scale = max_width / image.width
+        new_size = (max(1, int(image.width * scale)), max(1, int(image.height * scale)))
+        image = image.resize(new_size)
+
+    return {
+        "kind": "math",
+        "image": image,
+        "width": image.width,
+        "height": image.height,
+    }
+
+
+def _crop_rgba(image: Image.Image) -> Image.Image:
+    bbox = image.getbbox()
+    if bbox is None:
+        return image
+    return image.crop(bbox)
+
+
+def _load_manifest(manifest_path: Path) -> dict[str, object]:
+    if not manifest_path.exists():
+        return {"version": RENDERER_VERSION, "items": {}}
+
+    try:
+        return json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {"version": RENDERER_VERSION, "items": {}}
 
 
 def _load_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
@@ -146,18 +327,6 @@ def _text_width(
     return right - left
 
 
-def _truncate_line(
-    text: str, font: ImageFont.FreeTypeFont | ImageFont.ImageFont, max_width: int, draw: ImageDraw.ImageDraw
-) -> str:
-    if _text_width(text + "...", font, draw) <= max_width:
-        return text + "..."
-
-    truncated = text
-    while truncated and _text_width(truncated + "...", font, draw) > max_width:
-        truncated = truncated[:-1]
-    return (truncated or "") + "..."
-
-
 def _build_filename(item: KnowledgeItem) -> str:
     safe_title = re.sub(r'[<>:"/\\|?*]+', "_", item.title).strip().replace(" ", "_")
     safe_title = safe_title[:40] or "item"
@@ -165,3 +334,23 @@ def _build_filename(item: KnowledgeItem) -> str:
         f"{item.source_path.as_posix()}:{item.source_line}:{item.title}".encode("utf-8")
     ).hexdigest()[:8]
     return f"{safe_title}_{digest}.png"
+
+
+def _build_item_key(item: KnowledgeItem) -> str:
+    return f"{item.source_path.as_posix()}:{item.source_line}:{item.title}"
+
+
+def _build_content_hash(item: KnowledgeItem, width: int, height: int) -> str:
+    payload = json.dumps(
+        {
+            "renderer_version": RENDERER_VERSION,
+            "title": item.title,
+            "body": item.body,
+            "notes": item.notes,
+            "width": width,
+            "height": height,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
