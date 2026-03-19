@@ -1,10 +1,9 @@
-﻿__pycache__/
+__pycache__/
 *.pyc
 .tmp_tests/
 .tmp_downloads/
 output/test_images/
-output/images/*.png
-output/images/.manifest.json
+.dailytipsapp/
 .gui_settings.json
 assets/backgrounds/**
 !assets/backgrounds/

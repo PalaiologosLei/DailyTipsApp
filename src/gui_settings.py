@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 from pathlib import Path
@@ -8,14 +8,19 @@ DEFAULT_GUI_SETTINGS = {
     "source_mode": "local",
     "local_path": "",
     "github_url": "https://github.com/PalaiologosLei/DailyTips",
-    "output_dir": "output/images",
+    "output_dir": ".dailytipsapp",
     "cloud_dir": "C:/Users/lky14/iCloudDrive/DailyTips",
-    "device_model": "iphone_15_pro",
-    "width": "1179",
-    "height": "2556",
+    "device_model": "iphone_16_pro",
+    "width": "1206",
+    "height": "2622",
     "background_mode": "white",
     "background_group": "",
     "background_image_id": "",
+    "show_content_panel": True,
+    "text_font_family": "microsoft_yahei",
+    "math_font_family": "dejavusans",
+    "text_color": "#000000",
+    "math_color": "#000000",
 }
 
 

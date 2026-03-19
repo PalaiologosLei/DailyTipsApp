@@ -2,7 +2,7 @@
 
 from pathlib import Path
 import tkinter as tk
-from tkinter import filedialog, messagebox, simpledialog, ttk
+from tkinter import colorchooser, filedialog, messagebox, simpledialog, ttk
 
 from .app import AppError, reset_formula_memory_and_backgrounds, run_app
 from .background_library import (
@@ -18,7 +18,7 @@ from .background_library import (
 from .device_profiles import DEVICE_PROFILES, get_device_profile
 from .gui_settings import load_gui_settings, save_gui_settings
 from .models import BackgroundSelection, RenderConfig
-from .renderer import MATPLOTLIB_AVAILABLE
+from .renderer import MATPLOTLIB_AVAILABLE, MATH_FONT_CHOICES, TEXT_FONT_CHOICES
 
 SETTINGS_FILE_NAME = ".gui_settings.json"
 BACKGROUND_LIBRARY_RELATIVE_DIR = Path("assets") / "backgrounds"
@@ -43,9 +43,9 @@ STRINGS = {
         "local_path": "本地路径",
         "browse": "浏览",
         "github_url": "GitHub 地址",
-        "output_dir": "项目输出目录",
-        "cloud_dir": "云盘目录",
-        "cloud_dir_hint": "可选 iCloud / OneDrive / Dropbox 等同步目录",
+        "output_dir": "应用数据目录",
+        "cloud_dir": "图片云盘目录",
+        "cloud_dir_hint": "必填。最终 PNG 和图片清单文件会直接保存到这里",
         "device_model": "iPhone 型号",
         "custom_size": "自定义尺寸",
         "image_size": "图片尺寸",
@@ -77,18 +77,18 @@ STRINGS = {
         "cloud_missing_message": "所选云盘目录不存在，是否立即创建？",
         "cloud_create_failed": "创建云盘目录失败。",
         "reset_confirm_title": "确认清空",
-        "reset_confirm_message": "这会删除本地生成图片、公式缓存记录以及背景图库中的用户图片，是否继续？",
-        "reset_result": "已删除生成图片 {generated} 张，已删除云盘图片 {cloud} 张，已删除背景图 {backgrounds} 张。",
+        "reset_confirm_message": "这会删除本地元数据、公式缓存记录以及背景图库中的用户图片，是否继续？",
+        "reset_result": "已删除本地元数据 {metadata} 项，已删除云盘图片 {cloud} 张，已删除图片清单文件 {index} 个，已删除背景图 {backgrounds} 张。",
         "reset_done": "已清空。",
         "source_line": "来源: {value}",
         "markdown_files": "扫描到的 Markdown 文件数: {value}",
         "items": "提取到的条目数: {value}",
         "images": "图片总数: {value}",
         "delta": "新建: {created}，更新: {updated}，未变更: {unchanged}，删除: {deleted}",
-        "output_line": "项目输出目录: {value}",
-        "cloud_line": "云盘目录: {value}",
-        "cloud_sync": "云盘复制: 已复制 {copied}，已删除 {deleted}",
-        "cloud_skipped": "未设置云盘目录，已跳过复制。",
+        "output_line": "应用数据目录: {value}",
+        "cloud_line": "图片云盘目录: {value}",
+        "cloud_sync": "图片清单文件: {value}",
+        "cloud_skipped": "请先设置图片云盘目录。",
         "formula_support": "公式渲染: 已启用" if MATPLOTLIB_AVAILABLE else "公式渲染: 未安装 matplotlib，将回退为普通文本显示",
         "group_name_prompt": "输入新分组名称",
         "group_name_title": "新增分组",
@@ -109,9 +109,9 @@ STRINGS = {
         "local_path": "Local path",
         "browse": "Browse",
         "github_url": "GitHub URL",
-        "output_dir": "Project output dir",
-        "cloud_dir": "Cloud dir",
-        "cloud_dir_hint": "Optional iCloud / OneDrive / Dropbox synced folder",
+        "output_dir": "App data dir",
+        "cloud_dir": "Cloud image dir",
+        "cloud_dir_hint": "Required. Final PNG files and the image index file will be written here directly",
         "device_model": "iPhone model",
         "custom_size": "Custom size",
         "image_size": "Image size",
@@ -128,6 +128,13 @@ STRINGS = {
         "random_group": "Random from group",
         "random_all": "Random from all",
         "white_mode": "White background",
+        "style_section": "Render style",
+        "text_font": "Text font",
+        "formula_font": "Formula font",
+        "text_color": "Text color",
+        "formula_color": "Formula color",
+        "show_panel": "Keep translucent card",
+        "pick_color": "Pick color",
         "run": "Run",
         "ready": "Ready.",
         "running": "Running...",
@@ -144,17 +151,17 @@ STRINGS = {
         "cloud_create_failed": "Failed to create cloud directory.",
         "reset_confirm_title": "Confirm clear",
         "reset_confirm_message": "This removes generated images, formula cache records, and user background images. Continue?",
-        "reset_result": "Removed {generated} generated images, {cloud} cloud images, and {backgrounds} background images.",
+        "reset_result": "Removed {metadata} local metadata files, {cloud} cloud images, {index} image index files, and {backgrounds} background images.",
         "reset_done": "Cleared.",
         "source_line": "Source: {value}",
         "markdown_files": "Scanned markdown files: {value}",
         "items": "Extracted items: {value}",
         "images": "Generated images: {value}",
         "delta": "Created: {created}, Updated: {updated}, Unchanged: {unchanged}, Deleted: {deleted}",
-        "output_line": "Project output dir: {value}",
-        "cloud_line": "Cloud dir: {value}",
-        "cloud_sync": "Cloud copy: copied {copied}, deleted {deleted}",
-        "cloud_skipped": "Cloud directory not set, copy skipped.",
+        "output_line": "App data dir: {value}",
+        "cloud_line": "Cloud image dir: {value}",
+        "cloud_sync": "Image index file: {value}",
+        "cloud_skipped": "Cloud directory is not set.",
         "formula_support": "Formula rendering: enabled" if MATPLOTLIB_AVAILABLE else "Formula rendering: matplotlib not installed, plain-text fallback will be used",
         "group_name_prompt": "Enter a new group name",
         "group_name_title": "Add group",
@@ -194,6 +201,11 @@ def launch_gui() -> None:
     background_mode = tk.StringVar(value=str(saved["background_mode"]))
     background_group = tk.StringVar(value=str(saved["background_group"]))
     background_image_id = tk.StringVar(value=str(saved["background_image_id"]))
+    show_content_panel = tk.BooleanVar(value=bool(saved["show_content_panel"]))
+    text_font_family = tk.StringVar(value=str(saved["text_font_family"]))
+    math_font_family = tk.StringVar(value=str(saved["math_font_family"]))
+    text_color = tk.StringVar(value=str(saved["text_color"]))
+    math_color = tk.StringVar(value=str(saved["math_color"]))
     status_var = tk.StringVar(value=STRINGS[language.get()]["ready"])
 
     frame = ttk.Frame(root, padding=16, style="App.TFrame")
@@ -224,7 +236,7 @@ def launch_gui() -> None:
     left = ttk.LabelFrame(frame, padding=12)
     left.grid(row=1, column=0, sticky="nsew", padx=(0, 8))
     left.columnconfigure(1, weight=1)
-    left.rowconfigure(8, weight=1)
+    left.rowconfigure(9, weight=1)
 
     widgets["source_label"] = ttk.Label(left)
     widgets["source_label"].grid(row=0, column=0, sticky="w")
@@ -286,6 +298,43 @@ def launch_gui() -> None:
     group_choice_box = ttk.Combobox(selection_frame, state="readonly")
     group_choice_box.grid(row=1, column=0, sticky="ew")
 
+    style_frame = ttk.LabelFrame(left, padding=12)
+    style_frame.grid(row=9, column=0, columnspan=2, sticky="ew", pady=(16, 0))
+    style_frame.columnconfigure(1, weight=1)
+    style_frame.columnconfigure(3, weight=1)
+    widgets["style_frame"] = style_frame
+
+    widgets["text_font_label"] = ttk.Label(style_frame)
+    widgets["text_font_label"].grid(row=0, column=0, sticky="w")
+    text_font_box = ttk.Combobox(style_frame, state="readonly", width=22)
+    text_font_box.grid(row=0, column=1, sticky="ew", padx=(8, 16), pady=(0, 10))
+
+    widgets["math_font_label"] = ttk.Label(style_frame)
+    widgets["math_font_label"].grid(row=0, column=2, sticky="w")
+    math_font_box = ttk.Combobox(style_frame, state="readonly", width=22)
+    math_font_box.grid(row=0, column=3, sticky="ew", padx=(8, 0), pady=(0, 10))
+
+    widgets["text_color_label"] = ttk.Label(style_frame)
+    widgets["text_color_label"].grid(row=1, column=0, sticky="w")
+    text_color_row = ttk.Frame(style_frame, style="App.TFrame")
+    text_color_row.grid(row=1, column=1, sticky="w", padx=(8, 16), pady=(0, 10))
+    widgets["text_color_button"] = ttk.Button(text_color_row, style="Ghost.TButton")
+    widgets["text_color_button"].pack(side="left")
+    text_color_preview = tk.Label(text_color_row, width=10, relief="solid", bd=1, bg=text_color.get())
+    text_color_preview.pack(side="left", padx=(8, 0))
+
+    widgets["math_color_label"] = ttk.Label(style_frame)
+    widgets["math_color_label"].grid(row=1, column=2, sticky="w")
+    math_color_row = ttk.Frame(style_frame, style="App.TFrame")
+    math_color_row.grid(row=1, column=3, sticky="w", padx=(8, 0), pady=(0, 10))
+    widgets["math_color_button"] = ttk.Button(math_color_row, style="Ghost.TButton")
+    widgets["math_color_button"].pack(side="left")
+    math_color_preview = tk.Label(math_color_row, width=10, relief="solid", bd=1, bg=math_color.get())
+    math_color_preview.pack(side="left", padx=(8, 0))
+
+    widgets["panel_check"] = ttk.Checkbutton(style_frame, variable=show_content_panel)
+    widgets["panel_check"].grid(row=2, column=0, columnspan=4, sticky="w")
+
     right = ttk.LabelFrame(frame, padding=12)
     right.grid(row=1, column=1, rowspan=2, sticky="nsew")
     right.columnconfigure(0, weight=1)
@@ -338,6 +387,14 @@ def launch_gui() -> None:
     device_box["values"] = [profile.label for profile in DEVICE_PROFILES]
     current_device = get_device_profile(device_model.get())
     device_box.set(current_device.label)
+    text_font_key_to_label = {key: label for label, key in TEXT_FONT_CHOICES}
+    text_font_label_to_key = {label: key for label, key in TEXT_FONT_CHOICES}
+    math_font_key_to_label = {key: label for label, key in MATH_FONT_CHOICES}
+    math_font_label_to_key = {label: key for label, key in MATH_FONT_CHOICES}
+    text_font_box["values"] = [label for label, _ in TEXT_FONT_CHOICES]
+    math_font_box["values"] = [label for label, _ in MATH_FONT_CHOICES]
+    text_font_box.set(text_font_key_to_label.get(text_font_family.get(), TEXT_FONT_CHOICES[0][0]))
+    math_font_box.set(math_font_key_to_label.get(math_font_family.get(), MATH_FONT_CHOICES[0][0]))
 
     def tr(key: str, **kwargs: object) -> str:
         return STRINGS[language.get()][key].format(**kwargs)
@@ -380,6 +437,12 @@ def launch_gui() -> None:
         log_box.insert("end", message + "\n")
         log_box.see("end")
         root.update_idletasks()
+
+    def update_color_preview(widget: tk.Label, color_value: str) -> None:
+        try:
+            widget.configure(bg=color_value)
+        except tk.TclError:
+            widget.configure(bg="#000000")
 
     def refresh_group_list() -> None:
         groups = list_groups(background_library_dir)
@@ -477,6 +540,14 @@ def launch_gui() -> None:
         widgets["delete_image_button"].configure(text=tr("delete_image"))
         widgets["clear_button"].configure(text=tr("clear_all"))
         widgets["run_button"].configure(text=tr("run"))
+        widgets["style_frame"].configure(text=tr("style_section"))
+        widgets["text_font_label"].configure(text=tr("text_font"))
+        widgets["math_font_label"].configure(text=tr("formula_font"))
+        widgets["text_color_label"].configure(text=tr("text_color"))
+        widgets["math_color_label"].configure(text=tr("formula_color"))
+        widgets["text_color_button"].configure(text=tr("pick_color"))
+        widgets["math_color_button"].configure(text=tr("pick_color"))
+        widgets["panel_check"].configure(text=tr("show_panel"))
         bg_mode_box["values"] = [mode_label(mode) for mode in MODE_OPTIONS]
         bg_mode_box.set(mode_label(background_mode.get()))
         if status_var.get() in {STRINGS["zh"]["ready"], STRINGS["en"]["ready"]}:
@@ -498,6 +569,13 @@ def launch_gui() -> None:
                 return None
             return chosen_cloud_dir
         return None
+
+    def choose_color(target: tk.StringVar, preview: tk.Label) -> None:
+        selected = colorchooser.askcolor(color=target.get(), parent=root)[1]
+        if selected:
+            target.set(selected)
+            update_color_preview(preview, selected)
+            persist_settings()
 
     def handle_add_group() -> None:
         name = simpledialog.askstring(tr("group_name_title"), tr("group_name_prompt"), parent=root)
@@ -558,12 +636,12 @@ def launch_gui() -> None:
         chosen_cloud_dir = Path(cloud_dir.get().strip()).expanduser() if cloud_dir.get().strip() else None
         summary = reset_formula_memory_and_backgrounds(
             repo_dir=repo_dir,
-            output_dir_arg=output_dir.get().strip() or "output/images",
+            output_dir_arg=output_dir.get().strip() or ".dailytipsapp",
             cloud_dir=chosen_cloud_dir,
             background_library_dir=background_library_dir,
         )
         refresh_group_list()
-        append_log(tr("reset_result", generated=summary.removed_generated_count, cloud=summary.removed_cloud_count, backgrounds=summary.removed_background_count))
+        append_log(tr("reset_result", metadata=summary.removed_metadata_count, cloud=summary.removed_cloud_count, index=summary.removed_index_count, backgrounds=summary.removed_background_count))
         status_var.set(tr("reset_done"))
         persist_settings()
 
@@ -608,6 +686,14 @@ def launch_gui() -> None:
             background_image_id.set(value)
             persist_settings()
 
+    def on_text_font_change(_: object = None) -> None:
+        text_font_family.set(text_font_label_to_key.get(text_font_box.get(), TEXT_FONT_CHOICES[0][1]))
+        persist_settings()
+
+    def on_math_font_change(_: object = None) -> None:
+        math_font_family.set(math_font_label_to_key.get(math_font_box.get(), MATH_FONT_CHOICES[0][1]))
+        persist_settings()
+
     def run_clicked() -> None:
         log_box.delete("1.0", "end")
         status_var.set(tr("running"))
@@ -624,7 +710,8 @@ def launch_gui() -> None:
         chosen_local = Path(local_path.get().strip()).expanduser().resolve() if local_path.get().strip() else None
         chosen_github = github_url.get().strip() or None
         chosen_cloud_dir = ensure_cloud_dir_exists()
-        if cloud_dir.get().strip() and chosen_cloud_dir is None:
+        if chosen_cloud_dir is None:
+            messagebox.showerror(tr("run_failed_title"), tr("cloud_skipped"))
             status_var.set(tr("ready"))
             return
 
@@ -637,6 +724,11 @@ def launch_gui() -> None:
                 group_name=background_group.get(),
             ),
             background_library_dir=background_library_dir,
+            show_content_panel=show_content_panel.get(),
+            text_font_family=text_font_family.get(),
+            math_font_family=math_font_family.get(),
+            text_color=text_color.get(),
+            math_color=math_color.get(),
         )
 
         persist_settings()
@@ -648,7 +740,7 @@ def launch_gui() -> None:
                 repo_dir=repo_dir,
                 notes_dir=chosen_local if selected_mode == "local" else None,
                 github_url=chosen_github if selected_mode == "github" else None,
-                output_dir_arg=output_dir.get().strip() or "output/images",
+                output_dir_arg=output_dir.get().strip() or ".dailytipsapp",
                 cloud_dir=chosen_cloud_dir,
                 render_config=render_config,
             )
@@ -663,12 +755,9 @@ def launch_gui() -> None:
         append_log(tr("items", value=summary.item_count))
         append_log(tr("images", value=summary.image_count))
         append_log(tr("delta", created=summary.created_count, updated=summary.updated_count, unchanged=summary.unchanged_count, deleted=summary.deleted_count))
-        append_log(tr("output_line", value=summary.output_dir))
-        if summary.cloud_dir is not None:
-            append_log(tr("cloud_line", value=summary.cloud_dir))
-            append_log(tr("cloud_sync", copied=summary.cloud_copied_count, deleted=summary.cloud_deleted_count))
-        else:
-            append_log(tr("cloud_skipped"))
+        append_log(tr("output_line", value=summary.data_dir))
+        append_log(tr("cloud_line", value=summary.cloud_dir))
+        append_log(tr("cloud_sync", value=summary.index_path))
 
         status_var.set(tr("done"))
         persist_settings()
@@ -684,15 +773,22 @@ def launch_gui() -> None:
     widgets["delete_image_button"].configure(command=handle_delete_image)
     widgets["clear_button"].configure(command=handle_clear_all)
     widgets["run_button"].configure(command=run_clicked)
+    widgets["text_color_button"].configure(command=lambda: choose_color(text_color, text_color_preview))
+    widgets["math_color_button"].configure(command=lambda: choose_color(math_color, math_color_preview))
 
     language_box.bind("<<ComboboxSelected>>", on_language_change)
     device_box.bind("<<ComboboxSelected>>", on_device_change)
     bg_mode_box.bind("<<ComboboxSelected>>", on_mode_change)
     group_choice_box.bind("<<ComboboxSelected>>", on_group_choice_change)
     image_choice_box.bind("<<ComboboxSelected>>", on_image_choice_change)
+    text_font_box.bind("<<ComboboxSelected>>", on_text_font_change)
+    math_font_box.bind("<<ComboboxSelected>>", on_math_font_change)
     group_list.bind("<<ListboxSelect>>", on_group_select)
     image_list.bind("<<ListboxSelect>>", on_image_select)
+    show_content_panel.trace_add("write", lambda *_: persist_settings())
 
+    update_color_preview(text_color_preview, text_color.get())
+    update_color_preview(math_color_preview, math_color.get())
     sync_device_fields()
     refresh_group_list()
     apply_language()
@@ -723,6 +819,84 @@ def _selected_image_id(image_list: tk.Listbox, group_name: str, library_root: Pa
         return images[index].id
     return ""
 
+def _apply_styles(root: tk.Tk) -> None:
+    style = ttk.Style(root)
+    try:
+        style.theme_use("clam")
+    except tk.TclError:
+        pass
 
-
+    style.configure("App.TFrame", background=SURFACE)
+    style.configure("TLabelframe", background=SURFACE, borderwidth=0, relief="flat")
+    style.configure("TLabelframe.Label", background=SURFACE, foreground=TEXT, font=("Segoe UI", 11, "bold"))
+    style.configure("TFrame", background=SURFACE)
+    style.configure("TLabel", background=SURFACE, foreground=TEXT, font=("Segoe UI", 10))
+    style.configure("Field.TLabel", background=SURFACE, foreground=MUTED, font=("Segoe UI", 9))
+    style.configure("TCheckbutton", background=SURFACE, foreground=TEXT, font=("Segoe UI", 10))
+    style.configure("Subtle.TLabel", background=SURFACE, foreground=MUTED, font=("Segoe UI", 9))
+    style.configure(
+        "TEntry",
+        fieldbackground=CARD,
+        background=CARD,
+        foreground=TEXT,
+        insertcolor=TEXT,
+        bordercolor=BORDER,
+        lightcolor=BORDER,
+        darkcolor=BORDER,
+        padding=8,
+    )
+    style.configure(
+        "TCombobox",
+        fieldbackground=CARD,
+        background=CARD,
+        foreground=TEXT,
+        bordercolor=BORDER,
+        lightcolor=BORDER,
+        darkcolor=BORDER,
+        arrowsize=14,
+        padding=6,
+    )
+    style.map("TCombobox", fieldbackground=[("readonly", CARD)], foreground=[("readonly", TEXT)])
+    style.configure(
+        "Primary.TButton",
+        background=ACCENT,
+        foreground=ACCENT_TEXT,
+        borderwidth=0,
+        focusthickness=0,
+        padding=(14, 9),
+        font=("Segoe UI", 10, "bold"),
+    )
+    style.map(
+        "Primary.TButton",
+        background=[("active", "#1d4ed8"), ("pressed", "#1e40af")],
+        foreground=[("disabled", "#cbd5e1")],
+    )
+    style.configure(
+        "Ghost.TButton",
+        background=CARD,
+        foreground=TEXT,
+        borderwidth=1,
+        focusthickness=0,
+        padding=(12, 8),
+        font=("Segoe UI", 10),
+    )
+    style.map(
+        "Ghost.TButton",
+        background=[("active", "#eef2ff"), ("pressed", "#e2e8f0")],
+        foreground=[("disabled", "#94a3b8")],
+    )
+    style.configure(
+        "Danger.TButton",
+        background=DANGER,
+        foreground=DANGER_TEXT,
+        borderwidth=0,
+        focusthickness=0,
+        padding=(12, 8),
+        font=("Segoe UI", 10, "bold"),
+    )
+    style.map(
+        "Danger.TButton",
+        background=[("active", "#b91c1c"), ("pressed", "#991b1b")],
+        foreground=[("disabled", "#fecaca")],
+    )
 

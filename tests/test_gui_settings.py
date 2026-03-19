@@ -1,4 +1,4 @@
-﻿from pathlib import Path
+from pathlib import Path
 import json
 import shutil
 import unittest
@@ -31,7 +31,7 @@ class GuiSettingsTests(unittest.TestCase):
                 "source_mode": "github",
                 "local_path": "D:/notes",
                 "github_url": "https://github.com/example/repo",
-                "output_dir": "output/images",
+                "output_dir": ".dailytipsapp",
                 "cloud_dir": "C:/Users/test/iCloudDrive/DailyTips",
                 "device_model": "iphone_16_pro",
                 "width": "1206",
@@ -39,13 +39,22 @@ class GuiSettingsTests(unittest.TestCase):
                 "background_mode": "random_group",
                 "background_group": "nature",
                 "background_image_id": "nature/a.png",
+                "show_content_panel": False,
+                "text_font_family": "simhei",
+                "math_font_family": "stixsans",
+                "text_color": "#123456",
+                "math_color": "#654321",
             },
         )
-
         loaded = load_gui_settings(self.settings_path)
         self.assertEqual(loaded["device_model"], "iphone_16_pro")
         self.assertEqual(loaded["background_mode"], "random_group")
         self.assertEqual(loaded["cloud_dir"], "C:/Users/test/iCloudDrive/DailyTips")
+        self.assertFalse(loaded["show_content_panel"])
+        self.assertEqual(loaded["text_font_family"], "simhei")
+        self.assertEqual(loaded["math_font_family"], "stixsans")
+        self.assertEqual(loaded["text_color"], "#123456")
+        self.assertEqual(loaded["math_color"], "#654321")
         raw = json.loads(self.settings_path.read_text(encoding="utf-8"))
         self.assertEqual(raw["width"], "1206")
 

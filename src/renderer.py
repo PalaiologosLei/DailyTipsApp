@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import hashlib
 import io
@@ -9,12 +9,13 @@ from pathlib import Path
 from PIL import Image, ImageColor, ImageDraw, ImageFont
 
 from .background_library import choose_background_path
+from .cloud_sync import update_cloud_image_index
 from .models import KnowledgeItem, RenderConfig, RenderResult, RenderSummary
 
 DEFAULT_WIDTH = 1179
 DEFAULT_HEIGHT = 2556
 BACKGROUND = "white"
-FOREGROUND = "black"
+DEFAULT_TEXT_COLOR = "#000000"
 MARGIN_X = 90
 MARGIN_BOTTOM = 120
 CONTENT_TOP_GAP = 70
@@ -24,61 +25,86 @@ TITLE_SIZE = 76
 BODY_SIZE = 56
 NOTE_SIZE = 42
 MANIFEST_NAME = ".manifest.json"
-RENDERER_VERSION = "4"
+RENDER_STATE_NAME = "render_state.json"
+RENDERER_VERSION = "6"
 INLINE_MATH_PATTERN = re.compile(r"(\$[^$]+\$)")
 CJK_PATTERN = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+")
 MATH_SAFE_PATTERN = re.compile(r"^[A-Za-z0-9\\{}_^=+\-*/()\[\]|.,:;<>!?%&~'\" ]+$")
-MATH_SIZE_MULTIPLIER = 1.18
-CONTENT_PANEL_FILL = (255, 255, 255, 212)
+MATH_SIZE_MULTIPLIER = 0.96
+CONTENT_PANEL_BASE_FILL = (255, 255, 255)
+CONTENT_PANEL_ALPHA = 212
 CONTENT_PANEL_RADIUS = 48
+PANEL_SIDE_PADDING = 36
+PANEL_TOP_PADDING = 28
+PANEL_BOTTOM_PADDING = 36
+CONTENT_TEXT_TOP_PADDING = 24
 
-WINDOWS_FONT_CANDIDATES = [
-    Path(r"C:\Windows\Fonts\msyh.ttc"),
-    Path(r"C:\Windows\Fonts\msyhbd.ttc"),
-    Path(r"C:\Windows\Fonts\simhei.ttf"),
-    Path(r"C:\Windows\Fonts\simsun.ttc"),
+TEXT_FONT_CHOICES = [
+    ("Microsoft YaHei", "microsoft_yahei"),
+    ("SimHei", "simhei"),
+    ("SimSun", "simsun"),
+]
+MATH_FONT_CHOICES = [
+    ("DejaVu Sans", "dejavusans"),
+    ("STIX Sans", "stixsans"),
+    ("DejaVu Serif", "dejavuserif"),
+    ("STIX", "stix"),
+    ("Computer Modern", "cm"),
 ]
 
+TEXT_FONT_FILES = {
+    "microsoft_yahei": [Path(r"C:\Windows\Fonts\msyh.ttc"), Path(r"C:\Windows\Fonts\msyhbd.ttc")],
+    "simhei": [Path(r"C:\Windows\Fonts\simhei.ttf")],
+    "simsun": [Path(r"C:\Windows\Fonts\simsun.ttc")],
+}
+
 try:
+    from matplotlib import rc_context
     from matplotlib.font_manager import FontProperties
     from matplotlib.mathtext import math_to_image
 
     MATPLOTLIB_AVAILABLE = True
 except ImportError:
+    rc_context = None
     FontProperties = None
     math_to_image = None
     MATPLOTLIB_AVAILABLE = False
 
 
-def render_items(items: list[KnowledgeItem], output_dir: Path, render_config: RenderConfig) -> RenderSummary:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    manifest_path = output_dir / MANIFEST_NAME
+def render_items(items: list[KnowledgeItem], image_dir: Path, metadata_dir: Path, render_config: RenderConfig) -> RenderSummary:
+    image_dir.mkdir(parents=True, exist_ok=True)
+    metadata_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = metadata_dir / MANIFEST_NAME
+    state_path = metadata_dir / RENDER_STATE_NAME
     manifest = _load_manifest(manifest_path)
     previous_entries = manifest.get("items", {})
     current_entries: dict[str, dict[str, str]] = {}
     summary = RenderSummary(manifest_path=manifest_path)
+    render_state = _build_render_state(render_config)
+    previous_render_state = _load_state(state_path)
+    force_regenerate = previous_render_state != render_state
 
     for item in items:
         item_key = _build_item_key(item)
         background_path = _choose_background(render_config, item_key)
         background_stamp = _background_stamp(background_path)
         file_name = _build_filename(item)
-        image_path = output_dir / file_name
+        image_path = image_dir / file_name
         content_hash = _build_content_hash(item, render_config, background_stamp)
         previous = previous_entries.get(item_key)
 
-        if previous and previous.get("hash") == content_hash and image_path.exists():
+        if not force_regenerate and previous and previous.get("hash") == content_hash and image_path.exists():
             summary.results.append(RenderResult(item=item, image_path=image_path, status="unchanged"))
             summary.unchanged_count += 1
         else:
             existed_before = image_path.exists()
             render_item(item, image_path, render_config, background_path)
             if previous or existed_before:
-                status = "updated"
                 summary.updated_count += 1
+                status = "updated"
             else:
-                status = "created"
                 summary.created_count += 1
+                status = "created"
             summary.results.append(RenderResult(item=item, image_path=image_path, status=status))
 
         current_entries[item_key] = {"file": file_name, "hash": content_hash}
@@ -87,15 +113,18 @@ def render_items(items: list[KnowledgeItem], output_dir: Path, render_config: Re
     current_files = {entry["file"] for entry in current_entries.values()}
     stale_files = sorted(old_files - current_files)
     for file_name in stale_files:
-        stale_path = output_dir / file_name
+        stale_path = image_dir / file_name
         if stale_path.exists():
             stale_path.unlink()
         summary.deleted_paths.append(stale_path)
 
     new_manifest = {"version": RENDERER_VERSION, "items": current_entries}
-    if new_manifest != manifest or summary.deleted_paths:
+    if new_manifest != manifest or summary.deleted_paths or not manifest_path.exists():
         manifest_path.write_text(json.dumps(new_manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    if force_regenerate or not state_path.exists():
+        state_path.write_text(json.dumps(render_state, ensure_ascii=False, indent=2), encoding="utf-8")
 
+    update_cloud_image_index(image_dir)
     return summary
 
 
@@ -105,40 +134,81 @@ def render_item(item: KnowledgeItem, output_path: Path, render_config: RenderCon
     image = _create_base_image(width, height, background_path)
     draw = ImageDraw.Draw(image)
 
-    title_font = _load_font(TITLE_SIZE)
-    body_font = _load_font(BODY_SIZE)
-    note_font = _load_font(NOTE_SIZE)
+    text_color = _normalize_color(render_config.text_color)
+    math_color = _normalize_color(render_config.math_color)
+    title_font = _load_font(TITLE_SIZE, render_config.text_font_family)
+    body_font = _load_font(BODY_SIZE, render_config.text_font_family)
+    note_font = _load_font(NOTE_SIZE, render_config.text_font_family)
 
     top_blank_height = int(height * render_config.top_blank_ratio)
     content_top = max(top_blank_height + CONTENT_TOP_GAP, int(height * 0.36))
     max_width = width - MARGIN_X * 2
+    y_start = content_top + CONTENT_TEXT_TOP_PADDING
+    max_bottom = height - MARGIN_BOTTOM
 
-    _draw_content_panel(image, content_top, height)
-    draw = ImageDraw.Draw(image)
-    y = content_top + 24
+    measured_bottom = _measure_item_bottom(
+        draw,
+        item,
+        max_width,
+        y_start,
+        max_bottom,
+        title_font,
+        body_font,
+        note_font,
+        render_config.math_font_family,
+        math_color,
+    )
 
-    y = _draw_rich_block(image, draw, item.title, title_font, max_width, MARGIN_X, y)
+    if render_config.show_content_panel:
+        _draw_content_panel(image, content_top, measured_bottom)
+        draw = ImageDraw.Draw(image)
+
+    y = y_start
+    y = _render_rich_block(
+        image,
+        draw,
+        item.title,
+        title_font,
+        max_width,
+        MARGIN_X,
+        y,
+        render_config.math_font_family,
+        text_color,
+        math_color,
+    )
     y += BLOCK_SPACING
-    y = _draw_rich_block(image, draw, item.body, body_font, max_width, MARGIN_X, y)
+    y = _render_rich_block(
+        image,
+        draw,
+        item.body,
+        body_font,
+        max_width,
+        MARGIN_X,
+        y,
+        render_config.math_font_family,
+        text_color,
+        math_color,
+    )
     y += BLOCK_SPACING
 
     for note_index, note in enumerate(item.notes):
-        if y + _line_height(note_font) > height - MARGIN_BOTTOM:
+        if y + _line_height(note_font) > max_bottom:
             break
-
-        prefix = f"{note_index + 1}. "
-        y = _draw_rich_block(
+        y = _render_rich_block(
             image,
             draw,
-            f"{prefix}{note}",
+            f"{note_index + 1}. {note}",
             note_font,
             max_width,
             MARGIN_X,
             y,
-            max_bottom=height - MARGIN_BOTTOM,
+            render_config.math_font_family,
+            text_color,
+            math_color,
+            max_bottom=max_bottom,
             truncate=True,
         )
-        if y + BLOCK_SPACING > height - MARGIN_BOTTOM:
+        if y + BLOCK_SPACING > max_bottom:
             break
         y += 18
 
@@ -171,28 +241,80 @@ def _cover_resize(image: Image.Image, target_width: int, target_height: int) -> 
     return resized.crop((left, top, left + target_width, top + target_height))
 
 
-def _draw_content_panel(image: Image.Image, content_top: int, height: int) -> None:
+def _draw_content_panel(image: Image.Image, content_top: int, content_bottom: int) -> None:
     overlay = Image.new("RGBA", image.size, (255, 255, 255, 0))
     overlay_draw = ImageDraw.Draw(overlay)
-    panel_box = (36, max(24, content_top - 28), image.width - 36, height - 36)
-    overlay_draw.rounded_rectangle(panel_box, radius=CONTENT_PANEL_RADIUS, fill=CONTENT_PANEL_FILL)
-    image.alpha_composite(overlay) if image.mode == "RGBA" else image.paste(Image.alpha_composite(image.convert("RGBA"), overlay).convert("RGB"))
+    panel_top = max(24, content_top - PANEL_TOP_PADDING)
+    panel_bottom = min(image.height - 36, content_bottom + PANEL_BOTTOM_PADDING)
+    if panel_bottom <= panel_top:
+        panel_bottom = panel_top + 120
+    panel_box = (PANEL_SIDE_PADDING, panel_top, image.width - PANEL_SIDE_PADDING, panel_bottom)
+    fill = (*CONTENT_PANEL_BASE_FILL, CONTENT_PANEL_ALPHA)
+    overlay_draw.rounded_rectangle(panel_box, radius=CONTENT_PANEL_RADIUS, fill=fill)
+    composited = Image.alpha_composite(image.convert("RGBA"), overlay)
+    if image.mode == "RGBA":
+        image.alpha_composite(overlay)
+    else:
+        image.paste(composited.convert("RGB"))
 
 
-def _draw_rich_block(
-    image: Image.Image,
+def _measure_item_bottom(
+    draw: ImageDraw.ImageDraw,
+    item: KnowledgeItem,
+    max_width: int,
+    y: int,
+    max_bottom: int,
+    title_font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+    body_font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+    note_font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+    math_font_family: str,
+    math_color: str,
+) -> int:
+    y = _render_rich_block(None, draw, item.title, title_font, max_width, 0, y, math_font_family, DEFAULT_TEXT_COLOR, math_color, paint=False)
+    y += BLOCK_SPACING
+    y = _render_rich_block(None, draw, item.body, body_font, max_width, 0, y, math_font_family, DEFAULT_TEXT_COLOR, math_color, paint=False)
+    y += BLOCK_SPACING
+    for note_index, note in enumerate(item.notes):
+        if y + _line_height(note_font) > max_bottom:
+            break
+        y = _render_rich_block(
+            None,
+            draw,
+            f"{note_index + 1}. {note}",
+            note_font,
+            max_width,
+            0,
+            y,
+            math_font_family,
+            DEFAULT_TEXT_COLOR,
+            math_color,
+            max_bottom=max_bottom,
+            truncate=True,
+            paint=False,
+        )
+        if y + BLOCK_SPACING > max_bottom:
+            break
+        y += 18
+    return y
+
+
+def _render_rich_block(
+    image: Image.Image | None,
     draw: ImageDraw.ImageDraw,
     text: str,
     font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
     max_width: int,
     x: int,
     y: int,
+    math_font_family: str,
+    text_color: str,
+    math_color: str,
     max_bottom: int | None = None,
     truncate: bool = False,
+    paint: bool = True,
 ) -> int:
-    tokens = _tokenize(text, font, draw, max_width)
+    tokens = _tokenize(text, font, draw, max_width, math_color, math_font_family)
     lines = _layout_tokens(tokens, max_width)
-
     available_bottom = max_bottom if max_bottom is not None else 10**9
     truncated = False
 
@@ -205,23 +327,33 @@ def _draw_rich_block(
         cursor_x = x
         for token in line:
             token_y = y + max(0, (line_height - int(token["height"])) // 2)
-            if token["kind"] == "text":
-                draw.text((cursor_x, token_y), str(token["text"]), fill=FOREGROUND, font=font)
-            else:
-                token_image = token["image"]
-                image.paste(token_image, (cursor_x, token_y), token_image)
+            if paint:
+                if token["kind"] == "text":
+                    draw.text((cursor_x, token_y), str(token["text"]), fill=text_color, font=font)
+                else:
+                    token_image = token["image"]
+                    if image is not None:
+                        image.paste(token_image, (cursor_x, token_y), token_image)
             cursor_x += int(token["width"])
 
         y += line_height + LINE_SPACING
 
     if truncate and truncated and y + _line_height(font) <= available_bottom:
-        draw.text((x, y), "...", fill=FOREGROUND, font=font)
+        if paint:
+            draw.text((x, y), "...", fill=text_color, font=font)
         y += _line_height(font)
 
     return y
 
 
-def _tokenize(text: str, font: ImageFont.FreeTypeFont | ImageFont.ImageFont, draw: ImageDraw.ImageDraw, max_width: int) -> list[dict[str, object]]:
+def _tokenize(
+    text: str,
+    font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+    draw: ImageDraw.ImageDraw,
+    max_width: int,
+    math_color: str,
+    math_font_family: str,
+) -> list[dict[str, object]]:
     tokens: list[dict[str, object]] = []
     paragraphs = text.splitlines() or [""]
     for paragraph_index, paragraph in enumerate(paragraphs):
@@ -229,18 +361,14 @@ def _tokenize(text: str, font: ImageFont.FreeTypeFont | ImageFont.ImageFont, dra
         for part in parts:
             if not part:
                 continue
-
             if part.startswith("$") and part.endswith("$") and len(part) >= 2:
-                math_tokens = _build_formula_tokens(part[1:-1], font, draw, max_width)
+                math_tokens = _build_formula_tokens(part[1:-1], font, draw, max_width, math_color, math_font_family)
                 if math_tokens:
                     tokens.extend(math_tokens)
                     continue
-
             tokens.extend(_build_text_tokens(part, font, draw))
-
         if paragraph_index < len(paragraphs) - 1:
             tokens.append({"kind": "newline", "width": 0, "height": _line_height(font)})
-
     return tokens
 
 
@@ -251,17 +379,23 @@ def _build_text_tokens(text: str, font: ImageFont.FreeTypeFont | ImageFont.Image
     ]
 
 
-def _build_formula_tokens(formula_content: str, font: ImageFont.FreeTypeFont | ImageFont.ImageFont, draw: ImageDraw.ImageDraw, max_width: int) -> list[dict[str, object]]:
+def _build_formula_tokens(
+    formula_content: str,
+    font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+    draw: ImageDraw.ImageDraw,
+    max_width: int,
+    math_color: str,
+    math_font_family: str,
+) -> list[dict[str, object]]:
     if not formula_content.strip():
         return []
-
     segments = _split_formula_content(formula_content)
     tokens: list[dict[str, object]] = []
     for kind, segment in segments:
         if not segment:
             continue
         if kind == "math":
-            token = _build_math_token(segment, font, max_width)
+            token = _build_math_token(segment, font, max_width, math_color, math_font_family)
             if token is not None:
                 tokens.append(token)
                 continue
@@ -318,15 +452,26 @@ def _layout_tokens(tokens: list[dict[str, object]], max_width: int) -> list[list
     return lines
 
 
-def _build_math_token(formula_segment: str, font: ImageFont.FreeTypeFont | ImageFont.ImageFont, max_width: int) -> dict[str, object] | None:
-    if not MATPLOTLIB_AVAILABLE or math_to_image is None or FontProperties is None:
+def _build_math_token(
+    formula_segment: str,
+    font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+    max_width: int,
+    math_color: str,
+    math_font_family: str,
+) -> dict[str, object] | None:
+    if not MATPLOTLIB_AVAILABLE or math_to_image is None or FontProperties is None or rc_context is None:
         return None
 
     font_size = _extract_font_size(font)
     buffer = io.BytesIO()
+    context = {
+        "mathtext.fontset": _math_fontset(math_font_family),
+        "mathtext.default": "regular",
+    }
     try:
-        prop = FontProperties(size=max(12, font_size * MATH_SIZE_MULTIPLIER))
-        math_to_image(f"${formula_segment}$", buffer, prop=prop, dpi=170, format="png", color=FOREGROUND)
+        with rc_context(context):
+            prop = FontProperties(size=max(12, font_size * MATH_SIZE_MULTIPLIER))
+            math_to_image(f"${formula_segment}$", buffer, prop=prop, dpi=180, format="png", color=math_color)
     except Exception:
         return None
 
@@ -336,7 +481,7 @@ def _build_math_token(formula_segment: str, font: ImageFont.FreeTypeFont | Image
     if image.width == 0 or image.height == 0:
         return None
 
-    target_height = max(font_size + 2, int(font_size * 1.05))
+    target_height = max(font_size - 2, int(font_size * 0.96))
     if image.height != target_height:
         scale = target_height / image.height
         image = image.resize((max(1, int(image.width * scale)), max(1, int(image.height * scale))), Image.Resampling.LANCZOS)
@@ -365,6 +510,33 @@ def _background_stamp(background_path: Path | None) -> str:
     return f"{background_path.as_posix()}|{stat.st_mtime_ns}|{stat.st_size}"
 
 
+def _build_render_state(render_config: RenderConfig) -> dict[str, object]:
+    return {
+        "renderer_version": RENDERER_VERSION,
+        "width": render_config.width,
+        "height": render_config.height,
+        "top_blank_ratio": render_config.top_blank_ratio,
+        "background_mode": render_config.background_selection.mode,
+        "background_image_id": render_config.background_selection.image_id,
+        "background_group_name": render_config.background_selection.group_name,
+        "show_content_panel": render_config.show_content_panel,
+        "text_font_family": render_config.text_font_family,
+        "math_font_family": render_config.math_font_family,
+        "text_color": _normalize_color(render_config.text_color),
+        "math_color": _normalize_color(render_config.math_color),
+    }
+
+
+def _load_state(state_path: Path) -> dict[str, object]:
+    if not state_path.exists():
+        return {}
+    try:
+        loaded = json.loads(state_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
 def _load_manifest(manifest_path: Path) -> dict[str, object]:
     if not manifest_path.exists():
         return {"version": RENDERER_VERSION, "items": {}}
@@ -374,8 +546,10 @@ def _load_manifest(manifest_path: Path) -> dict[str, object]:
         return {"version": RENDERER_VERSION, "items": {}}
 
 
-def _load_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-    for candidate in WINDOWS_FONT_CANDIDATES:
+def _load_font(size: int, family_key: str) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    candidates = TEXT_FONT_FILES.get(family_key, [])
+    fallback_candidates = [path for paths in TEXT_FONT_FILES.values() for path in paths]
+    for candidate in [*candidates, *fallback_candidates]:
         if candidate.exists():
             return ImageFont.truetype(str(candidate), size=size)
     return ImageFont.load_default()
@@ -420,8 +594,25 @@ def _build_content_hash(item: KnowledgeItem, render_config: RenderConfig, backgr
             "background_image_id": render_config.background_selection.image_id,
             "background_group_name": render_config.background_selection.group_name,
             "background_stamp": background_stamp,
+            "show_content_panel": render_config.show_content_panel,
+            "text_font_family": render_config.text_font_family,
+            "math_font_family": render_config.math_font_family,
+            "text_color": _normalize_color(render_config.text_color),
+            "math_color": _normalize_color(render_config.math_color),
         },
         ensure_ascii=False,
         sort_keys=True,
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _normalize_color(color_value: str) -> str:
+    try:
+        return ImageColor.getrgb(color_value) and color_value
+    except ValueError:
+        return DEFAULT_TEXT_COLOR
+
+
+def _math_fontset(math_font_family: str) -> str:
+    valid = {choice[1] for choice in MATH_FONT_CHOICES}
+    return math_font_family if math_font_family in valid else "dejavusans"
