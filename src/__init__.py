@@ -1,0 +1,1 @@
+"""DailyTipsApp minimal package."""
