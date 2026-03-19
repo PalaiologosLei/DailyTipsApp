@@ -3,6 +3,7 @@ import json
 import shutil
 import unittest
 
+from src.device_profiles import get_device_profile
 from src.gui_settings import DEFAULT_GUI_SETTINGS, load_gui_settings, save_gui_settings
 
 
@@ -32,9 +33,9 @@ class GuiSettingsTests(unittest.TestCase):
                 "github_url": "https://github.com/example/repo",
                 "output_dir": "output/images",
                 "cloud_dir": "C:/Users/test/iCloudDrive/DailyTips",
-                "device_model": "iphone_14",
-                "width": "1170",
-                "height": "2532",
+                "device_model": "iphone_16_pro",
+                "width": "1206",
+                "height": "2622",
                 "background_mode": "random_group",
                 "background_group": "nature",
                 "background_image_id": "nature/a.png",
@@ -42,11 +43,15 @@ class GuiSettingsTests(unittest.TestCase):
         )
 
         loaded = load_gui_settings(self.settings_path)
-        self.assertEqual(loaded["device_model"], "iphone_14")
+        self.assertEqual(loaded["device_model"], "iphone_16_pro")
         self.assertEqual(loaded["background_mode"], "random_group")
         self.assertEqual(loaded["cloud_dir"], "C:/Users/test/iCloudDrive/DailyTips")
         raw = json.loads(self.settings_path.read_text(encoding="utf-8"))
-        self.assertEqual(raw["width"], "1170")
+        self.assertEqual(raw["width"], "1206")
+
+    def test_device_profile_contains_iphone_16_pro_max(self) -> None:
+        profile = get_device_profile("iphone_16_pro_max")
+        self.assertEqual((profile.width, profile.height), (1320, 2868))
 
 
 if __name__ == "__main__":

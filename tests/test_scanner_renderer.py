@@ -5,7 +5,7 @@ import unittest
 
 from PIL import Image
 
-from src.cloud_sync import sync_images_to_cloud
+from src.cloud_sync import clear_generated_outputs, sync_images_to_cloud
 from src.models import BackgroundSelection, KnowledgeItem, RenderConfig
 from src.renderer import MANIFEST_NAME, _split_formula_content, render_item, render_items
 from src.scanner import find_markdown_files
@@ -100,6 +100,21 @@ class ScannerRendererTests(unittest.TestCase):
         self.assertEqual(summary.deleted_count, 1)
         self.assertTrue((cloud_dir / "a.png").exists())
         self.assertFalse((cloud_dir / "old.png").exists())
+
+    def test_clear_generated_outputs(self) -> None:
+        output_dir = self.temp_root / "images"
+        cloud_dir = self.temp_root / "cloud"
+        output_dir.mkdir()
+        cloud_dir.mkdir()
+        (output_dir / "a.png").write_bytes(b"a")
+        (output_dir / MANIFEST_NAME).write_text("{}", encoding="utf-8")
+        (cloud_dir / "a.png").write_bytes(b"a")
+
+        summary = clear_generated_outputs(output_dir, cloud_dir)
+
+        self.assertEqual(summary.removed_generated_count, 1)
+        self.assertEqual(summary.removed_cloud_count, 1)
+        self.assertFalse((output_dir / MANIFEST_NAME).exists())
 
     def test_background_mode_changes_hash(self) -> None:
         output_dir = self.temp_root / "images"

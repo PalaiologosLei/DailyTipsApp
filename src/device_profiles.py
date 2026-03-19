@@ -12,6 +12,10 @@ class DeviceProfile:
 
 
 DEVICE_PROFILES = [
+    DeviceProfile("iphone_16", "iPhone 16", 1179, 2556),
+    DeviceProfile("iphone_16_plus", "iPhone 16 Plus", 1290, 2796),
+    DeviceProfile("iphone_16_pro", "iPhone 16 Pro", 1206, 2622),
+    DeviceProfile("iphone_16_pro_max", "iPhone 16 Pro Max", 1320, 2868),
     DeviceProfile("iphone_15_pro", "iPhone 15 Pro", 1179, 2556),
     DeviceProfile("iphone_15_pro_max", "iPhone 15 Pro Max", 1290, 2796),
     DeviceProfile("iphone_14", "iPhone 14 / 13 / 12", 1170, 2532),
@@ -24,4 +28,4 @@ DEVICE_PROFILE_MAP = {profile.key: profile for profile in DEVICE_PROFILES}
 
 
 def get_device_profile(key: str) -> DeviceProfile:
-    return DEVICE_PROFILE_MAP.get(key, DEVICE_PROFILE_MAP["iphone_15_pro"])
+    return DEVICE_PROFILE_MAP.get(key, DEVICE_PROFILE_MAP["iphone_16_pro"])

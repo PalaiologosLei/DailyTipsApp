@@ -4,7 +4,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
-from .app import AppError, run_app
+from .app import AppError, reset_formula_memory_and_backgrounds, run_app
 from .background_library import (
     BackgroundLibraryError,
     create_group,
@@ -23,6 +23,15 @@ from .renderer import MATPLOTLIB_AVAILABLE
 SETTINGS_FILE_NAME = ".gui_settings.json"
 BACKGROUND_LIBRARY_RELATIVE_DIR = Path("assets") / "backgrounds"
 MODE_OPTIONS = ["white", "specific", "random_group", "random_all"]
+SURFACE = "#f5f7fb"
+CARD = "#ffffff"
+TEXT = "#0f172a"
+MUTED = "#475569"
+BORDER = "#dbe4f0"
+ACCENT = "#2563eb"
+ACCENT_TEXT = "#ffffff"
+DANGER = "#dc2626"
+DANGER_TEXT = "#ffffff"
 
 STRINGS = {
     "zh": {
@@ -47,6 +56,7 @@ STRINGS = {
         "delete_group": "删除分组",
         "add_images": "导入图片",
         "delete_image": "删除图片",
+        "clear_all": "清空记忆和图库",
         "background_mode": "背景模式",
         "specific_image": "指定图片",
         "random_group": "指定分组随机",
@@ -66,6 +76,10 @@ STRINGS = {
         "cloud_missing_title": "云盘目录不存在",
         "cloud_missing_message": "所选云盘目录不存在，是否立即创建？",
         "cloud_create_failed": "创建云盘目录失败。",
+        "reset_confirm_title": "确认清空",
+        "reset_confirm_message": "这会删除本地生成图片、公式缓存记录以及背景图库中的用户图片，是否继续？",
+        "reset_result": "已删除生成图片 {generated} 张，已删除云盘图片 {cloud} 张，已删除背景图 {backgrounds} 张。",
+        "reset_done": "已清空。",
         "source_line": "来源: {value}",
         "markdown_files": "扫描到的 Markdown 文件数: {value}",
         "items": "提取到的条目数: {value}",
@@ -108,6 +122,7 @@ STRINGS = {
         "delete_group": "Delete group",
         "add_images": "Import images",
         "delete_image": "Delete image",
+        "clear_all": "Clear cache and library",
         "background_mode": "Background mode",
         "specific_image": "Specific image",
         "random_group": "Random from group",
@@ -127,6 +142,10 @@ STRINGS = {
         "cloud_missing_title": "Cloud directory missing",
         "cloud_missing_message": "The selected cloud directory does not exist. Create it now?",
         "cloud_create_failed": "Failed to create cloud directory.",
+        "reset_confirm_title": "Confirm clear",
+        "reset_confirm_message": "This removes generated images, formula cache records, and user background images. Continue?",
+        "reset_result": "Removed {generated} generated images, {cloud} cloud images, and {backgrounds} background images.",
+        "reset_done": "Cleared.",
         "source_line": "Source: {value}",
         "markdown_files": "Scanned markdown files: {value}",
         "items": "Extracted items: {value}",
@@ -154,6 +173,8 @@ def launch_gui() -> None:
     root = tk.Tk()
     root.geometry("1100x860")
     root.minsize(980, 760)
+    _apply_styles(root)
+    root.configure(bg=SURFACE)
 
     repo_dir = Path(__file__).resolve().parent.parent
     background_library_dir = repo_dir / BACKGROUND_LIBRARY_RELATIVE_DIR
@@ -175,7 +196,7 @@ def launch_gui() -> None:
     background_image_id = tk.StringVar(value=str(saved["background_image_id"]))
     status_var = tk.StringVar(value=STRINGS[language.get()]["ready"])
 
-    frame = ttk.Frame(root, padding=16)
+    frame = ttk.Frame(root, padding=16, style="App.TFrame")
     frame.pack(fill="both", expand=True)
     frame.columnconfigure(0, weight=3)
     frame.columnconfigure(1, weight=2)
@@ -184,7 +205,7 @@ def launch_gui() -> None:
 
     widgets: dict[str, object] = {}
 
-    top = ttk.Frame(frame)
+    top = ttk.Frame(frame, style="App.TFrame")
     top.grid(row=0, column=0, columnspan=2, sticky="ew")
     top.columnconfigure(1, weight=1)
     top.columnconfigure(3, weight=1)
@@ -220,7 +241,7 @@ def launch_gui() -> None:
     local_row.grid(row=1, column=1, sticky="ew", pady=(0, 12))
     local_row.columnconfigure(0, weight=1)
     ttk.Entry(local_row, textvariable=local_path).grid(row=0, column=0, sticky="ew")
-    widgets["browse_local_button"] = ttk.Button(local_row, command=lambda: _pick_directory(local_path))
+    widgets["browse_local_button"] = ttk.Button(local_row, style="Ghost.TButton", command=lambda: _pick_directory(local_path))
     widgets["browse_local_button"].grid(row=0, column=1, padx=(8, 0))
 
     widgets["github_label"] = ttk.Label(left)
@@ -237,7 +258,7 @@ def launch_gui() -> None:
     cloud_row.grid(row=4, column=1, sticky="ew", pady=(0, 4))
     cloud_row.columnconfigure(0, weight=1)
     ttk.Entry(cloud_row, textvariable=cloud_dir).grid(row=0, column=0, sticky="ew")
-    widgets["browse_cloud_button"] = ttk.Button(cloud_row, command=lambda: _pick_directory(cloud_dir))
+    widgets["browse_cloud_button"] = ttk.Button(cloud_row, style="Ghost.TButton", command=lambda: _pick_directory(cloud_dir))
     widgets["browse_cloud_button"].grid(row=0, column=1, padx=(8, 0))
     widgets["cloud_hint_label"] = ttk.Label(left)
     widgets["cloud_hint_label"].grid(row=5, column=1, sticky="w", pady=(0, 12))
@@ -284,32 +305,34 @@ def launch_gui() -> None:
     image_list.grid(row=2, column=1, sticky="nsew")
     right.rowconfigure(2, weight=1)
 
-    group_button_row = ttk.Frame(right)
+    group_button_row = ttk.Frame(right, style="App.TFrame")
     group_button_row.grid(row=3, column=0, sticky="ew", pady=(8, 0), padx=(0, 8))
-    widgets["add_group_button"] = ttk.Button(group_button_row)
+    widgets["add_group_button"] = ttk.Button(group_button_row, style="Ghost.TButton")
     widgets["add_group_button"].pack(side="left")
-    widgets["delete_group_button"] = ttk.Button(group_button_row)
+    widgets["delete_group_button"] = ttk.Button(group_button_row, style="Danger.TButton")
     widgets["delete_group_button"].pack(side="left", padx=(8, 0))
 
-    image_button_row = ttk.Frame(right)
+    image_button_row = ttk.Frame(right, style="App.TFrame")
     image_button_row.grid(row=3, column=1, sticky="ew", pady=(8, 0))
-    widgets["add_images_button"] = ttk.Button(image_button_row)
+    widgets["add_images_button"] = ttk.Button(image_button_row, style="Ghost.TButton")
     widgets["add_images_button"].pack(side="left")
-    widgets["delete_image_button"] = ttk.Button(image_button_row)
+    widgets["delete_image_button"] = ttk.Button(image_button_row, style="Danger.TButton")
     widgets["delete_image_button"].pack(side="left", padx=(8, 0))
 
-    bottom = ttk.Frame(frame)
+    bottom = ttk.Frame(frame, style="App.TFrame")
     bottom.grid(row=2, column=0, sticky="nsew", padx=(0, 8))
     bottom.columnconfigure(0, weight=1)
     bottom.rowconfigure(0, weight=1)
-    log_box = tk.Text(bottom, height=12, wrap="word")
+    log_box = tk.Text(bottom, height=12, wrap="word", bg=CARD, fg=TEXT, relief="flat", highlightthickness=1, highlightbackground=BORDER)
     log_box.grid(row=0, column=0, sticky="nsew", pady=(8, 12))
-    action_row = ttk.Frame(bottom)
+    action_row = ttk.Frame(bottom, style="App.TFrame")
     action_row.grid(row=1, column=0, sticky="ew")
     action_row.columnconfigure(0, weight=1)
-    ttk.Label(action_row, textvariable=status_var).grid(row=0, column=0, sticky="w")
-    widgets["run_button"] = ttk.Button(action_row)
-    widgets["run_button"].grid(row=0, column=1, sticky="e")
+    ttk.Label(action_row, textvariable=status_var, style="Subtle.TLabel").grid(row=0, column=0, sticky="w")
+    widgets["clear_button"] = ttk.Button(action_row, style="Danger.TButton")
+    widgets["clear_button"].grid(row=0, column=1, sticky="e", padx=(0, 8))
+    widgets["run_button"] = ttk.Button(action_row, style="Primary.TButton")
+    widgets["run_button"].grid(row=0, column=2, sticky="e")
 
     device_label_to_key = {profile.label: profile.key for profile in DEVICE_PROFILES}
     device_box["values"] = [profile.label for profile in DEVICE_PROFILES]
@@ -452,6 +475,7 @@ def launch_gui() -> None:
         widgets["delete_group_button"].configure(text=tr("delete_group"))
         widgets["add_images_button"].configure(text=tr("add_images"))
         widgets["delete_image_button"].configure(text=tr("delete_image"))
+        widgets["clear_button"].configure(text=tr("clear_all"))
         widgets["run_button"].configure(text=tr("run"))
         bg_mode_box["values"] = [mode_label(mode) for mode in MODE_OPTIONS]
         bg_mode_box.set(mode_label(background_mode.get()))
@@ -526,6 +550,21 @@ def launch_gui() -> None:
             return
         delete_background(background_library_dir, selected_id)
         refresh_group_list()
+        persist_settings()
+
+    def handle_clear_all() -> None:
+        if not messagebox.askyesno(tr("reset_confirm_title"), tr("reset_confirm_message")):
+            return
+        chosen_cloud_dir = Path(cloud_dir.get().strip()).expanduser() if cloud_dir.get().strip() else None
+        summary = reset_formula_memory_and_backgrounds(
+            repo_dir=repo_dir,
+            output_dir_arg=output_dir.get().strip() or "output/images",
+            cloud_dir=chosen_cloud_dir,
+            background_library_dir=background_library_dir,
+        )
+        refresh_group_list()
+        append_log(tr("reset_result", generated=summary.removed_generated_count, cloud=summary.removed_cloud_count, backgrounds=summary.removed_background_count))
+        status_var.set(tr("reset_done"))
         persist_settings()
 
     def on_group_select(_: object = None) -> None:
@@ -643,6 +682,7 @@ def launch_gui() -> None:
     widgets["delete_group_button"].configure(command=handle_delete_group)
     widgets["add_images_button"].configure(command=handle_add_images)
     widgets["delete_image_button"].configure(command=handle_delete_image)
+    widgets["clear_button"].configure(command=handle_clear_all)
     widgets["run_button"].configure(command=run_clicked)
 
     language_box.bind("<<ComboboxSelected>>", on_language_change)
@@ -682,3 +722,7 @@ def _selected_image_id(image_list: tk.Listbox, group_name: str, library_root: Pa
     if 0 <= index < len(images):
         return images[index].id
     return ""
+
+
+
+

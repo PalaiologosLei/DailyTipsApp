@@ -7,6 +7,7 @@ from PIL import Image
 from src.background_library import (
     BackgroundLibraryError,
     choose_background_path,
+    clear_background_library,
     create_group,
     import_backgrounds,
     list_backgrounds,
@@ -43,6 +44,13 @@ class BackgroundLibraryTests(unittest.TestCase):
         first = choose_background_path(self.library_root, selection, "item-1")
         second = choose_background_path(self.library_root, selection, "item-1")
         self.assertEqual(first, second)
+
+    def test_clear_background_library_keeps_default_group(self) -> None:
+        import_backgrounds(self.library_root, "nature", [self.source_image])
+        removed = clear_background_library(self.library_root)
+        self.assertEqual(removed, 1)
+        self.assertTrue((self.library_root / "default" / ".gitkeep").exists())
+        self.assertEqual(list_groups(self.library_root), ["default"])
 
     def test_rejects_non_image(self) -> None:
         invalid = self.temp_root / "bad.txt"

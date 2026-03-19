@@ -81,6 +81,28 @@ def delete_background(library_root: Path, image_id: str) -> None:
         path.unlink()
 
 
+def clear_background_library(library_root: Path, keep_default_group: bool = True) -> int:
+    ensure_library_root(library_root)
+    removed_count = 0
+    for group_path in [path for path in library_root.iterdir() if path.is_dir()]:
+        if keep_default_group and group_path.name == DEFAULT_GROUP:
+            for file_path in group_path.iterdir():
+                if file_path.is_file() and file_path.name != ".gitkeep":
+                    file_path.unlink()
+                    removed_count += 1
+            continue
+        for file_path in group_path.rglob("*"):
+            if file_path.is_file():
+                removed_count += 1
+        shutil.rmtree(group_path)
+    if keep_default_group:
+        (library_root / DEFAULT_GROUP).mkdir(parents=True, exist_ok=True)
+        gitkeep = library_root / DEFAULT_GROUP / ".gitkeep"
+        if not gitkeep.exists():
+            gitkeep.write_text("", encoding="utf-8")
+    return removed_count
+
+
 def resolve_image_id(library_root: Path, image_id: str) -> Path:
     if "/" not in image_id:
         raise BackgroundLibraryError(f"Invalid background id: {image_id}")

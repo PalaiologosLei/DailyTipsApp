@@ -16,6 +16,12 @@ class CloudSyncSummary:
     deleted_count: int
 
 
+@dataclass(slots=True)
+class ClearSummary:
+    removed_generated_count: int
+    removed_cloud_count: int
+
+
 def sync_images_to_cloud(source_dir: Path, cloud_dir: Path) -> CloudSyncSummary:
     if not source_dir.exists() or not source_dir.is_dir():
         raise CloudSyncError(f"Source image directory does not exist: {source_dir}")
@@ -39,3 +45,24 @@ def sync_images_to_cloud(source_dir: Path, cloud_dir: Path) -> CloudSyncSummary:
             deleted_count += 1
 
     return CloudSyncSummary(target_dir=cloud_dir, copied_count=copied_count, deleted_count=deleted_count)
+
+
+def clear_generated_outputs(output_dir: Path, cloud_dir: Path | None = None) -> ClearSummary:
+    removed_generated_count = 0
+    if output_dir.exists() and output_dir.is_dir():
+        for path in output_dir.glob("*.png"):
+            if path.is_file():
+                path.unlink()
+                removed_generated_count += 1
+        manifest_path = output_dir / ".manifest.json"
+        if manifest_path.exists():
+            manifest_path.unlink()
+
+    removed_cloud_count = 0
+    if cloud_dir is not None and cloud_dir.exists() and cloud_dir.is_dir():
+        for path in cloud_dir.glob("*.png"):
+            if path.is_file():
+                path.unlink()
+                removed_cloud_count += 1
+
+    return ClearSummary(removed_generated_count=removed_generated_count, removed_cloud_count=removed_cloud_count)

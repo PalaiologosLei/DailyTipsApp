@@ -3,7 +3,8 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-from .cloud_sync import CloudSyncError, sync_images_to_cloud
+from .background_library import clear_background_library
+from .cloud_sync import ClearSummary, CloudSyncError, clear_generated_outputs, sync_images_to_cloud
 from .models import RenderConfig
 from .note_source import materialize_notes_source
 from .parser import parse_markdown_file
@@ -29,6 +30,13 @@ class RunSummary:
     deleted_count: int
     cloud_copied_count: int
     cloud_deleted_count: int
+
+
+@dataclass(slots=True)
+class ResetSummary:
+    removed_generated_count: int
+    removed_cloud_count: int
+    removed_background_count: int
 
 
 def run_app(
@@ -81,3 +89,20 @@ def run_app(
         )
     finally:
         source.cleanup()
+
+
+def reset_formula_memory_and_backgrounds(
+    repo_dir: Path,
+    output_dir_arg: str,
+    cloud_dir: Path | None,
+    background_library_dir: Path,
+) -> ResetSummary:
+    output_dir = (repo_dir / output_dir_arg).resolve()
+    resolved_cloud_dir = cloud_dir.resolve() if cloud_dir is not None else None
+    clear_summary = clear_generated_outputs(output_dir, resolved_cloud_dir)
+    removed_background_count = clear_background_library(background_library_dir)
+    return ResetSummary(
+        removed_generated_count=clear_summary.removed_generated_count,
+        removed_cloud_count=clear_summary.removed_cloud_count,
+        removed_background_count=removed_background_count,
+    )
