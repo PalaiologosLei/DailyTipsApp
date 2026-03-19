@@ -23,8 +23,11 @@ TITLE_SIZE = 76
 BODY_SIZE = 56
 NOTE_SIZE = 42
 MANIFEST_NAME = ".manifest.json"
-RENDERER_VERSION = "2"
+RENDERER_VERSION = "3"
 INLINE_MATH_PATTERN = re.compile(r"(\$[^$]+\$)")
+CJK_PATTERN = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+")
+MATH_SAFE_PATTERN = re.compile(r"^[A-Za-z0-9\\{}_^=+\-*/()\[\]|.,:;<>!?%&~'\" ]+$")
+MATH_SIZE_MULTIPLIER = 1.55
 
 WINDOWS_FONT_CANDIDATES = [
     Path(r"C:\Windows\Fonts\msyh.ttc"),
@@ -34,10 +37,12 @@ WINDOWS_FONT_CANDIDATES = [
 ]
 
 try:
+    from matplotlib.font_manager import FontProperties
     from matplotlib.mathtext import math_to_image
 
     MATPLOTLIB_AVAILABLE = True
 except ImportError:
+    FontProperties = None
     math_to_image = None
     MATPLOTLIB_AVAILABLE = False
 
@@ -133,30 +138,6 @@ def render_item(item: KnowledgeItem, output_path: Path, width: int = DEFAULT_WID
     image.save(output_path)
 
 
-def wrap_text(text: str, font: ImageFont.FreeTypeFont | ImageFont.ImageFont, max_width: int, draw: ImageDraw.ImageDraw) -> list[str]:
-    lines: list[str] = []
-    for paragraph in text.splitlines() or [""]:
-        paragraph = paragraph.strip()
-        if not paragraph:
-            lines.append("")
-            continue
-
-        current = ""
-        for char in paragraph:
-            tentative = current + char
-            if _text_width(tentative, font, draw) <= max_width or not current:
-                current = tentative
-                continue
-
-            lines.append(current)
-            current = char
-
-        if current:
-            lines.append(current)
-
-    return lines or [text]
-
-
 def _draw_rich_block(
     image: Image.Image,
     draw: ImageDraw.ImageDraw,
@@ -214,25 +195,87 @@ def _tokenize(
                 continue
 
             if part.startswith("$") and part.endswith("$") and len(part) >= 2:
-                math_token = _build_math_token(part, max_width)
-                if math_token is not None:
-                    tokens.append(math_token)
+                math_tokens = _build_formula_tokens(part[1:-1], font, draw, max_width)
+                if math_tokens:
+                    tokens.extend(math_tokens)
                     continue
 
-            for char in part:
-                tokens.append(
-                    {
-                        "kind": "text",
-                        "text": char,
-                        "width": _text_width(char, font, draw),
-                        "height": _line_height(font),
-                    }
-                )
+            tokens.extend(_build_text_tokens(part, font, draw))
 
         if paragraph_index < len(paragraphs) - 1:
             tokens.append({"kind": "newline", "width": 0, "height": _line_height(font)})
 
     return tokens
+
+
+def _build_text_tokens(
+    text: str,
+    font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+    draw: ImageDraw.ImageDraw,
+) -> list[dict[str, object]]:
+    tokens: list[dict[str, object]] = []
+    for char in text:
+        tokens.append(
+            {
+                "kind": "text",
+                "text": char,
+                "width": _text_width(char, font, draw),
+                "height": _line_height(font),
+            }
+        )
+    return tokens
+
+
+def _build_formula_tokens(
+    formula_content: str,
+    font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+    draw: ImageDraw.ImageDraw,
+    max_width: int,
+) -> list[dict[str, object]]:
+    if not formula_content.strip():
+        return []
+
+    segments = _split_formula_content(formula_content)
+    tokens: list[dict[str, object]] = []
+    for kind, segment in segments:
+        if not segment:
+            continue
+        if kind == "math":
+            token = _build_math_token(segment, font, max_width)
+            if token is not None:
+                tokens.append(token)
+                continue
+        tokens.extend(_build_text_tokens(segment, font, draw))
+    return tokens
+
+
+def _split_formula_content(formula_content: str) -> list[tuple[str, str]]:
+    pieces: list[tuple[str, str]] = []
+    buffer = ""
+    current_kind: str | None = None
+
+    for char in formula_content:
+        kind = _classify_formula_char(char)
+        if current_kind == kind:
+            buffer += char
+            continue
+        if buffer:
+            pieces.append((current_kind or "text", buffer))
+        current_kind = kind
+        buffer = char
+
+    if buffer:
+        pieces.append((current_kind or "text", buffer))
+
+    return pieces
+
+
+def _classify_formula_char(char: str) -> str:
+    if CJK_PATTERN.fullmatch(char):
+        return "text"
+    if MATH_SAFE_PATTERN.fullmatch(char):
+        return "math"
+    return "text"
 
 
 def _layout_tokens(tokens: list[dict[str, object]], max_width: int) -> list[list[dict[str, object]]]:
@@ -262,13 +305,19 @@ def _layout_tokens(tokens: list[dict[str, object]], max_width: int) -> list[list
     return lines
 
 
-def _build_math_token(formula: str, max_width: int) -> dict[str, object] | None:
-    if not MATPLOTLIB_AVAILABLE or math_to_image is None:
+def _build_math_token(
+    formula_segment: str,
+    font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+    max_width: int,
+) -> dict[str, object] | None:
+    if not MATPLOTLIB_AVAILABLE or math_to_image is None or FontProperties is None:
         return None
 
+    font_size = _extract_font_size(font)
     buffer = io.BytesIO()
     try:
-        math_to_image(formula, buffer, dpi=220, format="png", color=FOREGROUND)
+        prop = FontProperties(size=max(12, font_size * MATH_SIZE_MULTIPLIER))
+        math_to_image(f"${formula_segment}$", buffer, prop=prop, dpi=180, format="png", color=FOREGROUND)
     except Exception:
         return None
 
@@ -278,10 +327,14 @@ def _build_math_token(formula: str, max_width: int) -> dict[str, object] | None:
     if image.width == 0 or image.height == 0:
         return None
 
+    target_height = max(font_size + 10, int(font_size * 1.28))
+    if image.height != target_height:
+        scale = target_height / image.height
+        image = image.resize((max(1, int(image.width * scale)), max(1, int(image.height * scale))), Image.Resampling.LANCZOS)
+
     if image.width > max_width:
         scale = max_width / image.width
-        new_size = (max(1, int(image.width * scale)), max(1, int(image.height * scale)))
-        image = image.resize(new_size)
+        image = image.resize((max(1, int(image.width * scale)), max(1, int(image.height * scale))), Image.Resampling.LANCZOS)
 
     return {
         "kind": "math",
@@ -313,6 +366,10 @@ def _load_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
         if candidate.exists():
             return ImageFont.truetype(str(candidate), size=size)
     return ImageFont.load_default()
+
+
+def _extract_font_size(font: ImageFont.FreeTypeFont | ImageFont.ImageFont) -> int:
+    return int(getattr(font, "size", BODY_SIZE))
 
 
 def _line_height(font: ImageFont.FreeTypeFont | ImageFont.ImageFont) -> int:

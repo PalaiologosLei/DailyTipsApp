@@ -6,7 +6,7 @@ import unittest
 from PIL import Image
 
 from src.models import KnowledgeItem
-from src.renderer import MANIFEST_NAME, render_item, render_items
+from src.renderer import MANIFEST_NAME, _split_formula_content, render_item, render_items
 from src.scanner import find_markdown_files
 
 
@@ -88,6 +88,10 @@ class ScannerRendererTests(unittest.TestCase):
         summary = render_items([first_item], output_dir, width=600, height=1000)
 
         self.assertEqual(len(summary.deleted_paths), 1)
+
+    def test_splits_formula_content_with_chinese(self) -> None:
+        parts = _split_formula_content("E(XY)=E(X)E(Y) X,Y 独立")
+        self.assertEqual(parts, [("math", "E(XY)=E(X)E(Y) X,Y "), ("text", "独立")])
 
 
 if __name__ == "__main__":

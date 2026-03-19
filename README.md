@@ -15,6 +15,7 @@ src/
   app.py
   git_sync.py
   gui.py
+  gui_settings.py
   main.py
   models.py
   note_source.py
@@ -44,9 +45,9 @@ requirements.txt
 程序识别如下结构：
 
 ```markdown
-- 【全概率公式】
-  - $P(A)=\sum P(A|X_i)P(X_i)$
-  - 期望版本 $E(X)=E(E(X|Y))$
+- 【事件的独立性】
+  - $E(XY)=E(X)E(Y)$
+  - 当且仅当 $X,Y$ 独立
 ```
 
 规则：
@@ -58,9 +59,25 @@ requirements.txt
 
 ## 公式渲染
 
-- 现在支持正文和说明中的行内公式 `$...$`
-- 使用 `matplotlib` 的 mathtext 进行渲染
+- 支持正文和说明中的行内公式 `$...$`
+- 公式中的中文会按普通文字渲染，避免乱码
+- 公式片段会按更接近正文的尺寸进行缩放，避免明显偏小
 - 如果本地没有安装 `matplotlib`，程序会回退成普通文本显示
+
+## GUI
+
+```bash
+python -m src.main --gui
+```
+
+GUI 支持：
+
+- 中文 / English 切换
+- 选择本地 Markdown 目录
+- 输入 GitHub 公开仓库地址
+- 设置输出目录和图片尺寸
+- 勾选是否跳过 git 提交
+- 自动将上次使用的语言、路径、地址、尺寸等保存到 `.gui_settings.json`
 
 ## 安装依赖
 
@@ -91,20 +108,6 @@ python -m src.main --github-url "https://github.com/PalaiologosLei/DailyTips"
 - `--commit-message`：自定义提交信息
 - `--gui`：启动图形界面
 
-## GUI 运行
-
-```bash
-python -m src.main --gui
-```
-
-GUI 支持：
-
-- 中文 / English 切换
-- 选择本地 Markdown 目录
-- 输入 GitHub 公开仓库地址
-- 设置输出目录和图片尺寸
-- 勾选是否跳过 git 提交
-
 ## 文件管理策略
 
 为了减少重复生成和无意义提交，程序现在会：
@@ -114,7 +117,7 @@ GUI 支持：
 - 已删除的条目对应图片会自动删除
 - 在 `output/images/.manifest.json` 中记录当前生成状态
 
-这能显著减缓仓库体积增长，但无法自动缩小已经存在的 Git 历史。如果历史里的图片版本已经很多，真正缩小仓库体积通常需要额外做历史重写，或者改用 Git LFS / 外部对象存储。
+这能显著减缓仓库体积增长，但不能自动缩小已经存在的 Git 历史。如果历史里已经积累了很多旧图片版本，真正缩小仓库体积通常仍需要额外做历史重写，或者改用 Git LFS / 外部对象存储。
 
 ## 测试
 

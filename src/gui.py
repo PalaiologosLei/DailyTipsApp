@@ -5,7 +5,10 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from .app import AppError, run_app
+from .gui_settings import load_gui_settings, save_gui_settings
 from .renderer import DEFAULT_HEIGHT, DEFAULT_WIDTH, MATPLOTLIB_AVAILABLE
+
+SETTINGS_FILE_NAME = ".gui_settings.json"
 
 STRINGS = {
     "zh": {
@@ -87,16 +90,18 @@ def launch_gui() -> None:
     root.minsize(720, 520)
 
     repo_dir = Path(__file__).resolve().parent.parent
+    settings_path = repo_dir / SETTINGS_FILE_NAME
+    saved = load_gui_settings(settings_path)
 
-    language = tk.StringVar(value="zh")
-    source_mode = tk.StringVar(value="local")
-    local_path = tk.StringVar()
-    github_url = tk.StringVar(value="https://github.com/PalaiologosLei/DailyTips")
-    output_dir = tk.StringVar(value="output/images")
-    width_var = tk.StringVar(value=str(DEFAULT_WIDTH))
-    height_var = tk.StringVar(value=str(DEFAULT_HEIGHT))
-    commit_var = tk.StringVar(value="")
-    skip_git_var = tk.BooleanVar(value=False)
+    language = tk.StringVar(value=str(saved["language"]))
+    source_mode = tk.StringVar(value=str(saved["source_mode"]))
+    local_path = tk.StringVar(value=str(saved["local_path"]))
+    github_url = tk.StringVar(value=str(saved["github_url"]))
+    output_dir = tk.StringVar(value=str(saved["output_dir"]))
+    width_var = tk.StringVar(value=str(saved["width"]))
+    height_var = tk.StringVar(value=str(saved["height"]))
+    commit_var = tk.StringVar(value=str(saved["commit_message"]))
+    skip_git_var = tk.BooleanVar(value=bool(saved["skip_git"]))
     status_var = tk.StringVar(value=STRINGS[language.get()]["ready"])
 
     frame = ttk.Frame(root, padding=16)
@@ -110,7 +115,7 @@ def launch_gui() -> None:
     widgets["language_label"].grid(row=0, column=0, sticky="w")
     language_box = ttk.Combobox(frame, state="readonly", values=["中文", "English"], width=12)
     language_box.grid(row=0, column=1, sticky="w", pady=(0, 12))
-    language_box.current(0)
+    language_box.set("中文" if language.get() == "zh" else "English")
 
     widgets["source_label"] = ttk.Label(frame)
     widgets["source_label"].grid(row=1, column=0, sticky="w")
@@ -166,6 +171,22 @@ def launch_gui() -> None:
     def tr(key: str, **kwargs: object) -> str:
         return STRINGS[language.get()][key].format(**kwargs)
 
+    def current_settings() -> dict[str, object]:
+        return {
+            "language": language.get(),
+            "source_mode": source_mode.get(),
+            "local_path": local_path.get(),
+            "github_url": github_url.get(),
+            "output_dir": output_dir.get(),
+            "width": width_var.get(),
+            "height": height_var.get(),
+            "commit_message": commit_var.get(),
+            "skip_git": skip_git_var.get(),
+        }
+
+    def persist_settings() -> None:
+        save_gui_settings(settings_path, current_settings())
+
     def apply_language() -> None:
         root.title(tr("window_title"))
         widgets["language_label"].configure(text=tr("language"))
@@ -191,6 +212,7 @@ def launch_gui() -> None:
     def on_language_change(_: object = None) -> None:
         language.set("zh" if language_box.get() == "中文" else "en")
         apply_language()
+        persist_settings()
 
     def run_clicked() -> None:
         log_box.delete("1.0", "end")
@@ -209,6 +231,7 @@ def launch_gui() -> None:
         chosen_github = github_url.get().strip() or None
         commit_message = commit_var.get().strip() or None
 
+        persist_settings()
         append_log(tr("formula_support"))
         append_log(tr("preparing"))
 
@@ -246,10 +269,16 @@ def launch_gui() -> None:
         append_log(tr("git_skipped") if skip_git_var.get() else (tr("git_done") if summary.git_pushed else tr("git_no_changes")))
 
         status_var.set(tr("done"))
+        persist_settings()
         messagebox.showinfo(tr("completed_title"), tr("completed_message"))
+
+    def on_close() -> None:
+        persist_settings()
+        root.destroy()
 
     widgets["run_button"].configure(command=run_clicked)
     language_box.bind("<<ComboboxSelected>>", on_language_change)
+    root.protocol("WM_DELETE_WINDOW", on_close)
     apply_language()
     root.mainloop()
 
