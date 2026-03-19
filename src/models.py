@@ -14,6 +14,22 @@ class KnowledgeItem:
 
 
 @dataclass(slots=True)
+class BackgroundSelection:
+    mode: str = "white"
+    image_id: str = ""
+    group_name: str = ""
+
+
+@dataclass(slots=True)
+class RenderConfig:
+    width: int
+    height: int
+    top_blank_ratio: float = 1 / 3
+    background_selection: BackgroundSelection = field(default_factory=BackgroundSelection)
+    background_library_dir: Path | None = None
+
+
+@dataclass(slots=True)
 class RenderResult:
     item: KnowledgeItem
     image_path: Path

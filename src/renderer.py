@@ -6,28 +6,31 @@ import json
 import re
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageColor, ImageDraw, ImageFont
 
-from .models import KnowledgeItem, RenderResult, RenderSummary
+from .background_library import choose_background_path
+from .models import KnowledgeItem, RenderConfig, RenderResult, RenderSummary
 
 DEFAULT_WIDTH = 1179
 DEFAULT_HEIGHT = 2556
 BACKGROUND = "white"
 FOREGROUND = "black"
 MARGIN_X = 90
-MARGIN_TOP = 120
 MARGIN_BOTTOM = 120
+CONTENT_TOP_GAP = 70
 BLOCK_SPACING = 44
 LINE_SPACING = 14
 TITLE_SIZE = 76
 BODY_SIZE = 56
 NOTE_SIZE = 42
 MANIFEST_NAME = ".manifest.json"
-RENDERER_VERSION = "3"
+RENDERER_VERSION = "4"
 INLINE_MATH_PATTERN = re.compile(r"(\$[^$]+\$)")
 CJK_PATTERN = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+")
 MATH_SAFE_PATTERN = re.compile(r"^[A-Za-z0-9\\{}_^=+\-*/()\[\]|.,:;<>!?%&~'\" ]+$")
-MATH_SIZE_MULTIPLIER = 1.55
+MATH_SIZE_MULTIPLIER = 1.18
+CONTENT_PANEL_FILL = (255, 255, 255, 212)
+CONTENT_PANEL_RADIUS = 48
 
 WINDOWS_FONT_CANDIDATES = [
     Path(r"C:\Windows\Fonts\msyh.ttc"),
@@ -47,9 +50,7 @@ except ImportError:
     MATPLOTLIB_AVAILABLE = False
 
 
-def render_items(
-    items: list[KnowledgeItem], output_dir: Path, width: int = DEFAULT_WIDTH, height: int = DEFAULT_HEIGHT
-) -> RenderSummary:
+def render_items(items: list[KnowledgeItem], output_dir: Path, render_config: RenderConfig) -> RenderSummary:
     output_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = output_dir / MANIFEST_NAME
     manifest = _load_manifest(manifest_path)
@@ -59,9 +60,11 @@ def render_items(
 
     for item in items:
         item_key = _build_item_key(item)
+        background_path = _choose_background(render_config, item_key)
+        background_stamp = _background_stamp(background_path)
         file_name = _build_filename(item)
         image_path = output_dir / file_name
-        content_hash = _build_content_hash(item, width=width, height=height)
+        content_hash = _build_content_hash(item, render_config, background_stamp)
         previous = previous_entries.get(item_key)
 
         if previous and previous.get("hash") == content_hash and image_path.exists():
@@ -69,7 +72,7 @@ def render_items(
             summary.unchanged_count += 1
         else:
             existed_before = image_path.exists()
-            render_item(item, image_path, width=width, height=height)
+            render_item(item, image_path, render_config, background_path)
             if previous or existed_before:
                 status = "updated"
                 summary.updated_count += 1
@@ -89,26 +92,30 @@ def render_items(
             stale_path.unlink()
         summary.deleted_paths.append(stale_path)
 
-    new_manifest = {
-        "version": RENDERER_VERSION,
-        "items": current_entries,
-    }
+    new_manifest = {"version": RENDERER_VERSION, "items": current_entries}
     if new_manifest != manifest or summary.deleted_paths:
         manifest_path.write_text(json.dumps(new_manifest, ensure_ascii=False, indent=2), encoding="utf-8")
 
     return summary
 
 
-def render_item(item: KnowledgeItem, output_path: Path, width: int = DEFAULT_WIDTH, height: int = DEFAULT_HEIGHT) -> None:
-    image = Image.new("RGB", (width, height), BACKGROUND)
+def render_item(item: KnowledgeItem, output_path: Path, render_config: RenderConfig, background_path: Path | None = None) -> None:
+    width = render_config.width
+    height = render_config.height
+    image = _create_base_image(width, height, background_path)
     draw = ImageDraw.Draw(image)
 
     title_font = _load_font(TITLE_SIZE)
     body_font = _load_font(BODY_SIZE)
     note_font = _load_font(NOTE_SIZE)
 
+    top_blank_height = int(height * render_config.top_blank_ratio)
+    content_top = max(top_blank_height + CONTENT_TOP_GAP, int(height * 0.36))
     max_width = width - MARGIN_X * 2
-    y = MARGIN_TOP
+
+    _draw_content_panel(image, content_top, height)
+    draw = ImageDraw.Draw(image)
+    y = content_top + 24
 
     y = _draw_rich_block(image, draw, item.title, title_font, max_width, MARGIN_X, y)
     y += BLOCK_SPACING
@@ -136,6 +143,40 @@ def render_item(item: KnowledgeItem, output_path: Path, width: int = DEFAULT_WID
         y += 18
 
     image.save(output_path)
+
+
+def _create_base_image(width: int, height: int, background_path: Path | None) -> Image.Image:
+    if background_path is None or not background_path.exists():
+        return Image.new("RGB", (width, height), BACKGROUND)
+
+    with Image.open(background_path) as background:
+        background = background.convert("RGB")
+        return _cover_resize(background, width, height)
+
+
+def _cover_resize(image: Image.Image, target_width: int, target_height: int) -> Image.Image:
+    source_ratio = image.width / image.height
+    target_ratio = target_width / target_height
+
+    if source_ratio > target_ratio:
+        scaled_height = target_height
+        scaled_width = int(target_height * source_ratio)
+    else:
+        scaled_width = target_width
+        scaled_height = int(target_width / source_ratio)
+
+    resized = image.resize((scaled_width, scaled_height), Image.Resampling.LANCZOS)
+    left = max(0, (scaled_width - target_width) // 2)
+    top = max(0, (scaled_height - target_height) // 2)
+    return resized.crop((left, top, left + target_width, top + target_height))
+
+
+def _draw_content_panel(image: Image.Image, content_top: int, height: int) -> None:
+    overlay = Image.new("RGBA", image.size, (255, 255, 255, 0))
+    overlay_draw = ImageDraw.Draw(overlay)
+    panel_box = (36, max(24, content_top - 28), image.width - 36, height - 36)
+    overlay_draw.rounded_rectangle(panel_box, radius=CONTENT_PANEL_RADIUS, fill=CONTENT_PANEL_FILL)
+    image.alpha_composite(overlay) if image.mode == "RGBA" else image.paste(Image.alpha_composite(image.convert("RGBA"), overlay).convert("RGB"))
 
 
 def _draw_rich_block(
@@ -180,12 +221,7 @@ def _draw_rich_block(
     return y
 
 
-def _tokenize(
-    text: str,
-    font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
-    draw: ImageDraw.ImageDraw,
-    max_width: int,
-) -> list[dict[str, object]]:
+def _tokenize(text: str, font: ImageFont.FreeTypeFont | ImageFont.ImageFont, draw: ImageDraw.ImageDraw, max_width: int) -> list[dict[str, object]]:
     tokens: list[dict[str, object]] = []
     paragraphs = text.splitlines() or [""]
     for paragraph_index, paragraph in enumerate(paragraphs):
@@ -208,30 +244,14 @@ def _tokenize(
     return tokens
 
 
-def _build_text_tokens(
-    text: str,
-    font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
-    draw: ImageDraw.ImageDraw,
-) -> list[dict[str, object]]:
-    tokens: list[dict[str, object]] = []
-    for char in text:
-        tokens.append(
-            {
-                "kind": "text",
-                "text": char,
-                "width": _text_width(char, font, draw),
-                "height": _line_height(font),
-            }
-        )
-    return tokens
+def _build_text_tokens(text: str, font: ImageFont.FreeTypeFont | ImageFont.ImageFont, draw: ImageDraw.ImageDraw) -> list[dict[str, object]]:
+    return [
+        {"kind": "text", "text": char, "width": _text_width(char, font, draw), "height": _line_height(font)}
+        for char in text
+    ]
 
 
-def _build_formula_tokens(
-    formula_content: str,
-    font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
-    draw: ImageDraw.ImageDraw,
-    max_width: int,
-) -> list[dict[str, object]]:
+def _build_formula_tokens(formula_content: str, font: ImageFont.FreeTypeFont | ImageFont.ImageFont, draw: ImageDraw.ImageDraw, max_width: int) -> list[dict[str, object]]:
     if not formula_content.strip():
         return []
 
@@ -253,7 +273,6 @@ def _split_formula_content(formula_content: str) -> list[tuple[str, str]]:
     pieces: list[tuple[str, str]] = []
     buffer = ""
     current_kind: str | None = None
-
     for char in formula_content:
         kind = _classify_formula_char(char)
         if current_kind == kind:
@@ -263,10 +282,8 @@ def _split_formula_content(formula_content: str) -> list[tuple[str, str]]:
             pieces.append((current_kind or "text", buffer))
         current_kind = kind
         buffer = char
-
     if buffer:
         pieces.append((current_kind or "text", buffer))
-
     return pieces
 
 
@@ -282,14 +299,12 @@ def _layout_tokens(tokens: list[dict[str, object]], max_width: int) -> list[list
     lines: list[list[dict[str, object]]] = []
     current_line: list[dict[str, object]] = []
     current_width = 0
-
     for token in tokens:
         if token["kind"] == "newline":
             lines.append(current_line)
             current_line = []
             current_width = 0
             continue
-
         token_width = int(token["width"])
         if current_line and current_width + token_width > max_width:
             lines.append(current_line)
@@ -298,18 +313,12 @@ def _layout_tokens(tokens: list[dict[str, object]], max_width: int) -> list[list
         else:
             current_line.append(token)
             current_width += token_width
-
     if current_line or not lines:
         lines.append(current_line)
-
     return lines
 
 
-def _build_math_token(
-    formula_segment: str,
-    font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
-    max_width: int,
-) -> dict[str, object] | None:
+def _build_math_token(formula_segment: str, font: ImageFont.FreeTypeFont | ImageFont.ImageFont, max_width: int) -> dict[str, object] | None:
     if not MATPLOTLIB_AVAILABLE or math_to_image is None or FontProperties is None:
         return None
 
@@ -317,7 +326,7 @@ def _build_math_token(
     buffer = io.BytesIO()
     try:
         prop = FontProperties(size=max(12, font_size * MATH_SIZE_MULTIPLIER))
-        math_to_image(f"${formula_segment}$", buffer, prop=prop, dpi=180, format="png", color=FOREGROUND)
+        math_to_image(f"${formula_segment}$", buffer, prop=prop, dpi=170, format="png", color=FOREGROUND)
     except Exception:
         return None
 
@@ -327,34 +336,38 @@ def _build_math_token(
     if image.width == 0 or image.height == 0:
         return None
 
-    target_height = max(font_size + 10, int(font_size * 1.28))
+    target_height = max(font_size + 2, int(font_size * 1.05))
     if image.height != target_height:
         scale = target_height / image.height
         image = image.resize((max(1, int(image.width * scale)), max(1, int(image.height * scale))), Image.Resampling.LANCZOS)
-
     if image.width > max_width:
         scale = max_width / image.width
         image = image.resize((max(1, int(image.width * scale)), max(1, int(image.height * scale))), Image.Resampling.LANCZOS)
 
-    return {
-        "kind": "math",
-        "image": image,
-        "width": image.width,
-        "height": image.height,
-    }
+    return {"kind": "math", "image": image, "width": image.width, "height": image.height}
 
 
 def _crop_rgba(image: Image.Image) -> Image.Image:
     bbox = image.getbbox()
-    if bbox is None:
-        return image
-    return image.crop(bbox)
+    return image.crop(bbox) if bbox is not None else image
+
+
+def _choose_background(render_config: RenderConfig, item_key: str) -> Path | None:
+    if render_config.background_library_dir is None:
+        return None
+    return choose_background_path(render_config.background_library_dir, render_config.background_selection, item_key)
+
+
+def _background_stamp(background_path: Path | None) -> str:
+    if background_path is None or not background_path.exists():
+        return "white"
+    stat = background_path.stat()
+    return f"{background_path.as_posix()}|{stat.st_mtime_ns}|{stat.st_size}"
 
 
 def _load_manifest(manifest_path: Path) -> dict[str, object]:
     if not manifest_path.exists():
         return {"version": RENDERER_VERSION, "items": {}}
-
     try:
         return json.loads(manifest_path.read_text(encoding="utf-8"))
     except Exception:
@@ -377,9 +390,7 @@ def _line_height(font: ImageFont.FreeTypeFont | ImageFont.ImageFont) -> int:
     return (bbox[3] - bbox[1]) + LINE_SPACING
 
 
-def _text_width(
-    text: str, font: ImageFont.FreeTypeFont | ImageFont.ImageFont, draw: ImageDraw.ImageDraw
-) -> int:
+def _text_width(text: str, font: ImageFont.FreeTypeFont | ImageFont.ImageFont, draw: ImageDraw.ImageDraw) -> int:
     left, _, right, _ = draw.textbbox((0, 0), text, font=font)
     return right - left
 
@@ -387,9 +398,7 @@ def _text_width(
 def _build_filename(item: KnowledgeItem) -> str:
     safe_title = re.sub(r'[<>:"/\\|?*]+', "_", item.title).strip().replace(" ", "_")
     safe_title = safe_title[:40] or "item"
-    digest = hashlib.md5(
-        f"{item.source_path.as_posix()}:{item.source_line}:{item.title}".encode("utf-8")
-    ).hexdigest()[:8]
+    digest = hashlib.md5(f"{item.source_path.as_posix()}:{item.source_line}:{item.title}".encode("utf-8")).hexdigest()[:8]
     return f"{safe_title}_{digest}.png"
 
 
@@ -397,15 +406,20 @@ def _build_item_key(item: KnowledgeItem) -> str:
     return f"{item.source_path.as_posix()}:{item.source_line}:{item.title}"
 
 
-def _build_content_hash(item: KnowledgeItem, width: int, height: int) -> str:
+def _build_content_hash(item: KnowledgeItem, render_config: RenderConfig, background_stamp: str) -> str:
     payload = json.dumps(
         {
             "renderer_version": RENDERER_VERSION,
             "title": item.title,
             "body": item.body,
             "notes": item.notes,
-            "width": width,
-            "height": height,
+            "width": render_config.width,
+            "height": render_config.height,
+            "top_blank_ratio": render_config.top_blank_ratio,
+            "background_mode": render_config.background_selection.mode,
+            "background_image_id": render_config.background_selection.image_id,
+            "background_group_name": render_config.background_selection.group_name,
+            "background_stamp": background_stamp,
         },
         ensure_ascii=False,
         sort_keys=True,

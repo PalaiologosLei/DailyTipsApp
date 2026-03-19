@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from .app import AppError, run_app
+from .models import BackgroundSelection, RenderConfig
 from .renderer import DEFAULT_HEIGHT, DEFAULT_WIDTH
 
 
@@ -36,6 +37,7 @@ def main() -> int:
         return 2
 
     repo_dir = Path(__file__).resolve().parent.parent
+    render_config = RenderConfig(width=args.width, height=args.height, background_selection=BackgroundSelection())
 
     try:
         summary = run_app(
@@ -44,8 +46,7 @@ def main() -> int:
             github_url=args.github_url,
             output_dir_arg=args.output_dir,
             cloud_dir=Path(args.cloud_dir).expanduser() if args.cloud_dir else None,
-            width=args.width,
-            height=args.height,
+            render_config=render_config,
         )
     except AppError as error:
         print(str(error), file=sys.stderr)
@@ -55,10 +56,7 @@ def main() -> int:
     print(f"Scanned markdown files: {summary.markdown_file_count}")
     print(f"Extracted items: {summary.item_count}")
     print(f"Generated images: {summary.image_count}")
-    print(
-        f"Created: {summary.created_count}, Updated: {summary.updated_count}, "
-        f"Unchanged: {summary.unchanged_count}, Deleted: {summary.deleted_count}"
-    )
+    print(f"Created: {summary.created_count}, Updated: {summary.updated_count}, Unchanged: {summary.unchanged_count}, Deleted: {summary.deleted_count}")
     print(f"Output directory: {summary.output_dir}")
     if summary.cloud_dir is not None:
         print(f"Cloud directory: {summary.cloud_dir}")

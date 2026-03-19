@@ -4,16 +4,22 @@
 
 1. 递归扫描 Markdown 笔记
 2. 提取符合规则的公式/知识点
-3. 生成白底黑字的竖屏图片
-4. 输出到当前仓库
-5. 将图片同步复制到你选择的云盘目录，例如 iCloud Drive 或 OneDrive
+3. 生成适配 iPhone 锁屏的图片
+4. 输出到当前项目目录
+5. 同步复制到你选择的云盘目录，例如 iCloud Drive 或 OneDrive
 
 ## 项目结构
 
 ```text
+assets/
+  backgrounds/
+    default/
+      .gitkeep
 src/
   app.py
+  background_library.py
   cloud_sync.py
+  device_profiles.py
   gui.py
   gui_settings.py
   main.py
@@ -27,6 +33,64 @@ output/
 tests/
 requirements.txt
 ```
+
+## 当前工作流
+
+- 扫描本地或 GitHub 公开笔记仓库中的 Markdown
+- 提取公式/知识点
+- 生成锁屏图片到 `output/images`
+- 再把 PNG 镜像复制到你指定的云盘目录
+
+项目不再自动把生成图片提交到 GitHub。GitHub 只用于代码版本管理。
+
+## GUI 功能
+
+```bash
+python -m src.main --gui
+```
+
+GUI 支持：
+
+- 中文 / English 切换
+- 选择本地 Markdown 目录或 GitHub 公开仓库地址
+- 选择 iPhone 型号
+- 自定义尺寸（`Custom`）
+- 设置项目输出目录和云盘目录
+- 如果云盘目录不存在，运行前提示创建
+- 自动记住上次使用的语言、路径、云盘目录、设备型号、背景模式等
+
+## 图片渲染
+
+- 顶部约 `1/3` 高度留白，避免挡住 iPhone 锁屏时间和小组件
+- 支持正文和说明中的行内公式 `$...$`
+- 公式中的中文按普通文字渲染，避免乱码
+- 公式字母尺寸做了回调，尽量贴近普通正文大小
+- 背景可选纯白或背景图库中的图片
+- 有背景图时，程序会自动裁剪到目标锁屏尺寸，并在内容区下方加半透明白底保证可读性
+
+## 背景图库
+
+背景图库位于 `assets/backgrounds/`，按“分组目录”组织。
+
+GUI 里支持：
+
+- 查看分组
+- 新增 / 删除分组
+- 导入图片到某个分组
+- 删除图片
+- 选择以下背景模式：
+  - 纯白背景
+  - 指定图片
+  - 指定分组随机
+  - 全部图片随机
+
+说明：
+
+- 用户导入的背景图必须是图片文件
+- 支持常见格式：`png/jpg/jpeg/webp/bmp`
+- 不限制原图尺寸，生成时会自动裁剪适配
+- 背景图库中的用户图片默认被 `.gitignore` 忽略，不会提交到 GitHub
+- “随机”模式采用稳定选择策略，同一条目在背景池不变时不会每次都变图，避免无意义重生成
 
 ## 支持的输入来源
 
@@ -57,36 +121,6 @@ requirements.txt
 - 同层后续内容视为说明列表
 - 如果没有找到下一层缩进内容，则跳过
 
-## 公式渲染
-
-- 支持正文和说明中的行内公式 `$...$`
-- 公式中的中文会按普通文字渲染，避免乱码
-- 公式片段会按更接近正文的尺寸进行缩放，避免明显偏小
-- 如果本地没有安装 `matplotlib`，程序会回退成普通文本显示
-
-## GUI
-
-```bash
-python -m src.main --gui
-```
-
-GUI 支持：
-
-- 中文 / English 切换
-- 选择本地 Markdown 目录
-- 输入 GitHub 公开仓库地址
-- 设置项目输出目录和云盘目录
-- 自动将上次使用的语言、路径、地址、尺寸等保存到 `.gui_settings.json`
-
-`云盘目录` 可以是：
-
-- `C:\Users\lky14\iCloudDrive\DailyTips`
-- OneDrive 同步目录
-- Dropbox 同步目录
-- 其他本地同步盘目录
-
-应用本身只负责把图片复制到这个目录，不关心背后是哪个云服务。
-
 ## 安装依赖
 
 ```bash
@@ -95,13 +129,11 @@ pip install -r requirements.txt
 
 ## 命令行运行
 
-解析本地目录并同步到 iCloud 目录：
-
 ```bash
 python -m src.main --notes-dir "D:\path\to\DailyTips" --cloud-dir "C:\Users\lky14\iCloudDrive\DailyTips"
 ```
 
-解析 GitHub 公开仓库并同步到云盘目录：
+或：
 
 ```bash
 python -m src.main --github-url "https://github.com/PalaiologosLei/DailyTips" --cloud-dir "C:\Users\lky14\iCloudDrive\DailyTips"
@@ -117,15 +149,13 @@ python -m src.main --github-url "https://github.com/PalaiologosLei/DailyTips" --
 
 ## 文件管理策略
 
-为了减少重复生成和无意义复制，程序现在会：
+程序会：
 
 - 为每个条目计算内容哈希
 - 未变化的图片不重新生成
 - 已删除的条目对应图片会自动删除
 - 在 `output/images/.manifest.json` 中记录当前生成状态
-- 每次将当前全部图片镜像到云盘目录，并删除云盘目录里已过期的旧图片
-
-当前项目不再自动执行 `git add` / `git commit` / `git push`，图片也不再以 GitHub 仓库作为分发存储。
+- 每次将当前全部 PNG 镜像到云盘目录，并删除云盘目录里已过期的旧 PNG
 
 ## 测试
 

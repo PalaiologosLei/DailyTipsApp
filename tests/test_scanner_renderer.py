@@ -6,7 +6,7 @@ import unittest
 from PIL import Image
 
 from src.cloud_sync import sync_images_to_cloud
-from src.models import KnowledgeItem
+from src.models import BackgroundSelection, KnowledgeItem, RenderConfig
 from src.renderer import MANIFEST_NAME, _split_formula_content, render_item, render_items
 from src.scanner import find_markdown_files
 
@@ -42,7 +42,8 @@ class ScannerRendererTests(unittest.TestCase):
             source_path=Path("note.md"),
             source_line=1,
         )
-        render_item(item, output_path, width=600, height=1000)
+        config = RenderConfig(width=600, height=1000)
+        render_item(item, output_path, config)
 
         self.assertTrue(output_path.exists())
         with Image.open(output_path) as image:
@@ -57,9 +58,10 @@ class ScannerRendererTests(unittest.TestCase):
             source_path=Path("note.md"),
             source_line=1,
         )
+        config = RenderConfig(width=600, height=1000)
 
-        first = render_items([item], output_dir, width=600, height=1000)
-        second = render_items([item], output_dir, width=600, height=1000)
+        first = render_items([item], output_dir, config)
+        second = render_items([item], output_dir, config)
 
         self.assertEqual(first.created_count, 1)
         self.assertEqual(second.unchanged_count, 1)
@@ -70,23 +72,12 @@ class ScannerRendererTests(unittest.TestCase):
 
     def test_render_items_deletes_stale_files(self) -> None:
         output_dir = self.temp_root / "images"
-        first_item = KnowledgeItem(
-            title="First",
-            body="Body one",
-            notes=[],
-            source_path=Path("note.md"),
-            source_line=1,
-        )
-        second_item = KnowledgeItem(
-            title="Second",
-            body="Body two",
-            notes=[],
-            source_path=Path("note.md"),
-            source_line=2,
-        )
+        first_item = KnowledgeItem("First", "Body one", [], Path("note.md"), 1)
+        second_item = KnowledgeItem("Second", "Body two", [], Path("note.md"), 2)
+        config = RenderConfig(width=600, height=1000)
 
-        render_items([first_item, second_item], output_dir, width=600, height=1000)
-        summary = render_items([first_item], output_dir, width=600, height=1000)
+        render_items([first_item, second_item], output_dir, config)
+        summary = render_items([first_item], output_dir, config)
 
         self.assertEqual(len(summary.deleted_paths), 1)
 
@@ -109,6 +100,18 @@ class ScannerRendererTests(unittest.TestCase):
         self.assertEqual(summary.deleted_count, 1)
         self.assertTrue((cloud_dir / "a.png").exists())
         self.assertFalse((cloud_dir / "old.png").exists())
+
+    def test_background_mode_changes_hash(self) -> None:
+        output_dir = self.temp_root / "images"
+        item = KnowledgeItem("Hash Test", "Body", [], Path("note.md"), 1)
+        config1 = RenderConfig(width=600, height=1000, background_selection=BackgroundSelection(mode="white"))
+        config2 = RenderConfig(width=600, height=1000, background_selection=BackgroundSelection(mode="random_all"))
+
+        first = render_items([item], output_dir, config1)
+        second = render_items([item], output_dir, config2)
+
+        self.assertEqual(first.created_count, 1)
+        self.assertEqual(second.updated_count, 1)
 
 
 if __name__ == "__main__":

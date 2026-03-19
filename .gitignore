@@ -6,3 +6,7 @@ output/test_images/
 output/images/*.png
 output/images/.manifest.json
 .gui_settings.json
+assets/backgrounds/**
+!assets/backgrounds/
+!assets/backgrounds/default/
+!assets/backgrounds/default/.gitkeep

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .cloud_sync import CloudSyncError, sync_images_to_cloud
+from .models import RenderConfig
 from .note_source import materialize_notes_source
 from .parser import parse_markdown_file
 from .renderer import render_items
@@ -36,8 +37,7 @@ def run_app(
     github_url: str | None,
     output_dir_arg: str,
     cloud_dir: Path | None,
-    width: int,
-    height: int,
+    render_config: RenderConfig,
 ) -> RunSummary:
     output_dir = (repo_dir / output_dir_arg).resolve()
 
@@ -52,7 +52,7 @@ def run_app(
         for markdown_file in markdown_files:
             items.extend(parse_markdown_file(markdown_file))
 
-        render_summary = render_items(items, output_dir, width=width, height=height)
+        render_summary = render_items(items, output_dir, render_config)
 
         cloud_copied_count = 0
         cloud_deleted_count = 0

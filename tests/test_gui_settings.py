@@ -32,17 +32,21 @@ class GuiSettingsTests(unittest.TestCase):
                 "github_url": "https://github.com/example/repo",
                 "output_dir": "output/images",
                 "cloud_dir": "C:/Users/test/iCloudDrive/DailyTips",
-                "width": "1000",
-                "height": "2000",
+                "device_model": "iphone_14",
+                "width": "1170",
+                "height": "2532",
+                "background_mode": "random_group",
+                "background_group": "nature",
+                "background_image_id": "nature/a.png",
             },
         )
 
         loaded = load_gui_settings(self.settings_path)
-        self.assertEqual(loaded["language"], "en")
-        self.assertEqual(loaded["source_mode"], "github")
+        self.assertEqual(loaded["device_model"], "iphone_14")
+        self.assertEqual(loaded["background_mode"], "random_group")
         self.assertEqual(loaded["cloud_dir"], "C:/Users/test/iCloudDrive/DailyTips")
         raw = json.loads(self.settings_path.read_text(encoding="utf-8"))
-        self.assertEqual(raw["width"], "1000")
+        self.assertEqual(raw["width"], "1170")
 
 
 if __name__ == "__main__":
