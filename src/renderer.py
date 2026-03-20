@@ -162,7 +162,7 @@ def _find_tectonic_executable() -> Path | None:
     return None
 
 
-def render_items(items: list[KnowledgeItem], image_dir: Path, metadata_dir: Path, render_config: RenderConfig) -> RenderSummary:
+def render_items(items: list[KnowledgeItem], image_dir: Path, metadata_dir: Path, render_config: RenderConfig, persist_outputs: bool = True) -> RenderSummary:
     image_dir.mkdir(parents=True, exist_ok=True)
     metadata_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = metadata_dir / MANIFEST_NAME
@@ -211,12 +211,18 @@ def render_items(items: list[KnowledgeItem], image_dir: Path, metadata_dir: Path
         summary.deleted_paths.append(stale_path)
 
     new_manifest = {"version": RENDERER_VERSION, "items": current_entries}
-    if new_manifest != manifest or summary.deleted_paths or not manifest_path.exists():
-        manifest_path.write_text(json.dumps(new_manifest, ensure_ascii=False, indent=2), encoding="utf-8")
-    if force_regenerate or not state_path.exists():
-        state_path.write_text(json.dumps(render_state, ensure_ascii=False, indent=2), encoding="utf-8")
+    image_index_payload = {"images": sorted(path.name for path in image_dir.glob("*.png") if path.is_file()), "count": len(current_entries)}
+    summary.manifest_data = new_manifest
+    summary.render_state_data = render_state
+    summary.image_index_data = image_index_payload
 
-    update_cloud_image_index(image_dir)
+    if persist_outputs:
+        if new_manifest != manifest or summary.deleted_paths or not manifest_path.exists():
+            manifest_path.write_text(json.dumps(new_manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+        if force_regenerate or not state_path.exists():
+            state_path.write_text(json.dumps(render_state, ensure_ascii=False, indent=2), encoding="utf-8")
+        update_cloud_image_index(image_dir)
+
     return summary
 
 

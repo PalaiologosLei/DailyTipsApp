@@ -5,9 +5,7 @@ from pathlib import Path
 
 DEFAULT_GUI_SETTINGS = {
     "language": "zh",
-    "source_mode": "local",
     "local_path": "",
-    "github_url": "https://github.com/PalaiologosLei/DailyTips",
     "output_dir": ".dailytipsapp",
     "cloud_dir": "C:/Users/lky14/iCloudDrive/DailyTips",
     "device_model": "iphone_17_pro",

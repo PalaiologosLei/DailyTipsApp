@@ -11,16 +11,15 @@ from .renderer import DEFAULT_HEIGHT, DEFAULT_WIDTH
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Scan markdown notes, extract formulas/knowledge points, and render them as images."
+        description='Scan local markdown notes, extract formulas/knowledge points, and render them as images.'
     )
-    parser.add_argument("--notes-dir", help="Root directory of a local markdown notes repository.")
-    parser.add_argument("--github-url", help="GitHub public repository URL, such as https://github.com/owner/repo.")
-    parser.add_argument("--output-dir", default=".dailytipsapp", help="Directory used to store local metadata such as manifests.")
-    parser.add_argument("--cloud-dir", help="Directory in iCloud, OneDrive, or another synced folder used to store the final images.")
-    parser.add_argument("--width", type=int, default=DEFAULT_WIDTH, help="Image width in pixels.")
-    parser.add_argument("--height", type=int, default=DEFAULT_HEIGHT, help="Image height in pixels.")
-    parser.add_argument("--formula-renderer", choices=["auto", "tectonic", "matplotlib"], default="auto", help="Formula rendering backend.")
-    parser.add_argument("--gui", action="store_true", help="Launch the simple desktop GUI.")
+    parser.add_argument('--notes-dir', help='Root directory of a local markdown notes repository.')
+    parser.add_argument('--output-dir', default='.dailytipsapp', help='Directory used to store local metadata such as manifests.')
+    parser.add_argument('--cloud-dir', help='Directory in iCloud, OneDrive, or another synced folder used to store the final images.')
+    parser.add_argument('--width', type=int, default=DEFAULT_WIDTH, help='Image width in pixels.')
+    parser.add_argument('--height', type=int, default=DEFAULT_HEIGHT, help='Image height in pixels.')
+    parser.add_argument('--formula-renderer', choices=['auto', 'tectonic', 'matplotlib'], default='auto', help='Formula rendering backend.')
+    parser.add_argument('--gui', action='store_true', help='Launch the legacy tkinter GUI.')
     return parser
 
 
@@ -33,22 +32,26 @@ def main() -> int:
         launch_gui()
         return 0
 
-    if bool(args.notes_dir) == bool(args.github_url):
-        print("Provide exactly one of --notes-dir or --github-url.", file=sys.stderr)
+    if not args.notes_dir:
+        print('--notes-dir is required.', file=sys.stderr)
         return 2
 
     if not args.cloud_dir:
-        print("--cloud-dir is required because images are generated directly into your synced folder.", file=sys.stderr)
+        print('--cloud-dir is required because images are generated directly into your synced folder.', file=sys.stderr)
         return 2
 
     repo_dir = Path(__file__).resolve().parent.parent
-    render_config = RenderConfig(width=args.width, height=args.height, background_selection=BackgroundSelection(), formula_renderer=args.formula_renderer)
+    render_config = RenderConfig(
+        width=args.width,
+        height=args.height,
+        background_selection=BackgroundSelection(),
+        formula_renderer=args.formula_renderer,
+    )
 
     try:
         summary = run_app(
             repo_dir=repo_dir,
-            notes_dir=Path(args.notes_dir).expanduser().resolve() if args.notes_dir else None,
-            github_url=args.github_url,
+            notes_dir=Path(args.notes_dir).expanduser().resolve(),
             output_dir_arg=args.output_dir,
             cloud_dir=Path(args.cloud_dir).expanduser(),
             render_config=render_config,
@@ -57,17 +60,17 @@ def main() -> int:
         print(str(error), file=sys.stderr)
         return 1
 
-    print(f"Source: {summary.source_description}")
-    print(f"Scanned markdown files: {summary.markdown_file_count}")
-    print(f"Extracted items: {summary.item_count}")
-    print(f"Generated images: {summary.image_count}")
-    print(f"Created: {summary.created_count}, Updated: {summary.updated_count}, Unchanged: {summary.unchanged_count}, Deleted: {summary.deleted_count}")
-    print(f"Metadata directory: {summary.data_dir}")
-    print(f"Cloud directory: {summary.cloud_dir}")
-    print(f"Image index: {summary.index_path}")
+    print(f'Source: {summary.source_description}')
+    print(f'Scanned markdown files: {summary.markdown_file_count}')
+    print(f'Extracted items: {summary.item_count}')
+    print(f'Generated images: {summary.image_count}')
+    print(f'Created: {summary.created_count}, Updated: {summary.updated_count}, Unchanged: {summary.unchanged_count}, Deleted: {summary.deleted_count}')
+    print(f'Metadata directory: {summary.data_dir}')
+    print(f'Cloud directory: {summary.cloud_dir}')
+    print(f'Image index: {summary.index_path}')
 
     return 0
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     raise SystemExit(main())

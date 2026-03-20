@@ -51,6 +51,9 @@ class RenderSummary:
     updated_count: int = 0
     unchanged_count: int = 0
     deleted_paths: list[Path] = field(default_factory=list)
+    manifest_data: dict[str, object] | None = None
+    render_state_data: dict[str, object] | None = None
+    image_index_data: dict[str, object] | None = None
 
     @property
     def image_count(self) -> int:
