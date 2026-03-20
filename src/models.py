@@ -28,8 +28,10 @@ class RenderConfig:
     background_selection: BackgroundSelection = field(default_factory=BackgroundSelection)
     background_library_dir: Path | None = None
     show_content_panel: bool = True
+    panel_opacity: int = 212
     text_font_family: str = "microsoft_yahei"
     math_font_family: str = "dejavusans"
+    formula_renderer: str = "auto"
     text_color: str = "#000000"
     math_color: str = "#000000"
 

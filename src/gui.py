@@ -3,8 +3,9 @@
 from pathlib import Path
 import tkinter as tk
 from tkinter import colorchooser, filedialog, messagebox, simpledialog, ttk
+from tkinter import font as tkfont
 
-from .app import AppError, reset_formula_memory_and_backgrounds, run_app
+from .app import AppError, clear_backgrounds, clear_formula_memory, run_app
 from .background_library import (
     BackgroundLibraryError,
     create_group,
@@ -18,7 +19,7 @@ from .background_library import (
 from .device_profiles import DEVICE_PROFILES, get_device_profile
 from .gui_settings import load_gui_settings, save_gui_settings
 from .models import BackgroundSelection, RenderConfig
-from .renderer import MATPLOTLIB_AVAILABLE, MATH_FONT_CHOICES, TEXT_FONT_CHOICES
+from .renderer import FORMULA_RENDERER_CHOICES, MATH_FONT_CHOICES, TEXT_FONT_CHOICES, describe_formula_support
 
 SETTINGS_FILE_NAME = ".gui_settings.json"
 BACKGROUND_LIBRARY_RELATIVE_DIR = Path("assets") / "backgrounds"
@@ -36,76 +37,87 @@ DANGER_TEXT = "#ffffff"
 STRINGS = {
     "zh": {
         "window_title": "DailyTipsApp",
-        "language": "语言",
-        "source": "来源",
-        "local_folder": "本地文件夹",
-        "github_repo": "GitHub 公开仓库",
-        "local_path": "本地路径",
-        "browse": "浏览",
-        "github_url": "GitHub 地址",
-        "output_dir": "应用数据目录",
-        "cloud_dir": "图片云盘目录",
-        "cloud_dir_hint": "必填。最终 PNG 和图片清单文件会直接保存到这里",
-        "device_model": "iPhone 型号",
-        "custom_size": "自定义尺寸",
-        "image_size": "图片尺寸",
-        "background_section": "背景图库",
-        "background_groups": "分组",
-        "background_images": "图片",
-        "add_group": "新增分组",
-        "delete_group": "删除分组",
-        "add_images": "导入图片",
-        "delete_image": "删除图片",
-        "clear_all": "清空记忆和图库",
-        "background_mode": "背景模式",
-        "specific_image": "指定图片",
-        "random_group": "指定分组随机",
-        "random_all": "全部随机",
-        "white_mode": "纯白背景",
-        "style_section": "渲染样式",
-        "text_font": "文本字体",
-        "formula_font": "公式字体",
-        "text_color": "文本颜色",
-        "formula_color": "公式颜色",
-        "show_panel": "保留半透明卡片",
-        "pick_color": "选择颜色",
-        "run": "开始运行",
-        "ready": "就绪。",
-        "running": "运行中...",
-        "done": "完成。",
-        "failed": "失败。",
-        "preparing": "正在准备笔记来源...",
-        "invalid_size_title": "尺寸无效",
-        "invalid_size_message": "宽度和高度必须是整数。",
-        "completed_title": "执行完成",
-        "completed_message": "处理完成。",
-        "run_failed_title": "运行失败",
-        "cloud_missing_title": "云盘目录不存在",
-        "cloud_missing_message": "所选云盘目录不存在，是否立即创建？",
-        "cloud_create_failed": "创建云盘目录失败。",
-        "reset_confirm_title": "确认清空",
-        "reset_confirm_message": "这会删除本地元数据、公式缓存记录以及背景图库中的用户图片，是否继续？",
-        "reset_result": "已删除本地元数据 {metadata} 项，已删除云盘图片 {cloud} 张，已删除图片清单文件 {index} 个，已删除背景图 {backgrounds} 张。",
-        "reset_done": "已清空。",
-        "source_line": "来源: {value}",
-        "markdown_files": "扫描到的 Markdown 文件数: {value}",
-        "items": "提取到的条目数: {value}",
-        "images": "图片总数: {value}",
-        "delta": "新建: {created}，更新: {updated}，未变更: {unchanged}，删除: {deleted}",
-        "output_line": "应用数据目录: {value}",
-        "cloud_line": "图片云盘目录: {value}",
-        "cloud_sync": "图片清单文件: {value}",
-        "cloud_skipped": "请先设置图片云盘目录。",
-        "formula_support": "公式渲染: 已启用" if MATPLOTLIB_AVAILABLE else "公式渲染: 未安装 matplotlib，将回退为普通文本显示",
-        "group_name_prompt": "输入新分组名称",
-        "group_name_title": "新增分组",
-        "no_group_selected": "请先选择一个分组。",
-        "confirm_delete_group": "确定删除分组“{name}”及其全部图片吗？",
-        "confirm_delete_image": "确定删除图片“{name}”吗？",
-        "library_error": "背景图库操作失败",
-        "background_mode_prompt": "背景模式",
-        "no_image_available": "暂无图片",
-        "no_group_available": "暂无分组",
+        "language": "??",
+        "source": "??",
+        "local_folder": "?????",
+        "github_repo": "GitHub ????",
+        "local_path": "????",
+        "browse": "??",
+        "github_url": "GitHub ??",
+        "output_dir": "??????",
+        "cloud_dir": "??????",
+        "cloud_dir_hint": "????? PNG ???????????????",
+        "device_model": "iPhone ??",
+        "custom_size": "?????",
+        "image_size": "????",
+        "background_section": "????",
+        "background_groups": "??",
+        "background_images": "??",
+        "add_group": "????",
+        "delete_group": "????",
+        "add_images": "????",
+        "delete_image": "????",
+        "clear_generated": "??????",
+        "clear_library": "????",
+        "background_mode": "????",
+        "specific_image": "????",
+        "random_group": "??????",
+        "random_all": "????",
+        "white_mode": "????",
+        "style_section": "????",
+        "text_font": "????",
+        "formula_font": "????",
+        "text_color": "????",
+        "formula_color": "????",
+        "show_panel": "???????",
+        "pick_color": "????",
+        "panel_opacity": "?????",
+        "run": "????",
+        "ready": "???",
+        "running": "???...",
+        "done": "???",
+        "failed": "???",
+        "preparing": "????????...",
+        "invalid_size_title": "????",
+        "invalid_size_message": "???????????",
+        "completed_title": "????",
+        "completed_message": "?????",
+        "run_failed_title": "????",
+        "cloud_missing_title": "???????",
+        "cloud_missing_message": "?????????????????",
+        "cloud_create_failed": "?????????",
+        "clear_generated_confirm_title": "????????",
+        "clear_library_confirm_title": "??????",
+        "clear_generated_confirm_message": "?????????????????????????????????????",
+        "clear_library_confirm_message": "????????????????????",
+        "clear_generated_result": "???????? {metadata} ????????? {cloud} ??????????? {index} ??",
+        "clear_library_result": "?????? {backgrounds} ??",
+        "clear_generated_done": "????????",
+        "clear_library_done": "??????",
+        "source_line": "??: {value}",
+        "markdown_files": "???? Markdown ???: {value}",
+        "items": "???????: {value}",
+        "images": "????: {value}",
+        "delta": "??: {created}???: {updated}????: {unchanged}???: {deleted}",
+        "output_line": "??????: {value}",
+        "cloud_line": "??????: {value}",
+        "cloud_sync": "??????: {value}",
+        "cloud_skipped": "???????????",
+        "formula_support": "??????",
+        "formula_renderer": "????",
+        "formula_status_label": "????",
+        "auto_renderer": "??????",
+        "tectonic_renderer": "Tectonic LaTeX",
+        "matplotlib_renderer": "Matplotlib MathText",
+        "group_name_prompt": "???????",
+        "group_name_title": "????",
+        "no_group_selected": "?????????",
+        "confirm_delete_group": "???????{name}?????????",
+        "confirm_delete_image": "???????{name}???",
+        "library_error": "????????",
+        "background_mode_prompt": "????",
+        "no_image_available": "????",
+        "no_group_available": "????",
     },
     "en": {
         "window_title": "DailyTipsApp",
@@ -129,7 +141,8 @@ STRINGS = {
         "delete_group": "Delete group",
         "add_images": "Import images",
         "delete_image": "Delete image",
-        "clear_all": "Clear cache and library",
+        "clear_generated": "Clear generated",
+        "clear_library": "Clear library",
         "background_mode": "Background mode",
         "specific_image": "Specific image",
         "random_group": "Random from group",
@@ -142,6 +155,7 @@ STRINGS = {
         "formula_color": "Formula color",
         "show_panel": "Keep translucent card",
         "pick_color": "Pick color",
+        "panel_opacity": "Card opacity",
         "run": "Run",
         "ready": "Ready.",
         "running": "Running...",
@@ -156,10 +170,14 @@ STRINGS = {
         "cloud_missing_title": "Cloud directory missing",
         "cloud_missing_message": "The selected cloud directory does not exist. Create it now?",
         "cloud_create_failed": "Failed to create cloud directory.",
-        "reset_confirm_title": "Confirm clear",
-        "reset_confirm_message": "This removes generated images, formula cache records, and user background images. Continue?",
-        "reset_result": "Removed {metadata} local metadata files, {cloud} cloud images, {index} image index files, and {backgrounds} background images.",
-        "reset_done": "Cleared.",
+        "clear_generated_confirm_title": "Confirm clear generated",
+        "clear_library_confirm_title": "Confirm clear library",
+        "clear_generated_confirm_message": "This removes local metadata, formula cache records, cloud images, and the image index file. Continue?",
+        "clear_library_confirm_message": "This removes user background images from the library. Continue?",
+        "clear_generated_result": "Removed {metadata} local metadata files, {cloud} cloud images, and {index} image index files.",
+        "clear_library_result": "Removed {backgrounds} background images.",
+        "clear_generated_done": "Generated outputs cleared.",
+        "clear_library_done": "Library cleared.",
         "source_line": "Source: {value}",
         "markdown_files": "Scanned markdown files: {value}",
         "items": "Extracted items: {value}",
@@ -169,7 +187,12 @@ STRINGS = {
         "cloud_line": "Cloud image dir: {value}",
         "cloud_sync": "Image index file: {value}",
         "cloud_skipped": "Cloud directory is not set.",
-        "formula_support": "Formula rendering: enabled" if MATPLOTLIB_AVAILABLE else "Formula rendering: matplotlib not installed, plain-text fallback will be used",
+        "formula_support": "Formula renderer status",
+        "formula_renderer": "Formula engine",
+        "formula_status_label": "Current status",
+        "auto_renderer": "Auto (Recommended)",
+        "tectonic_renderer": "Tectonic LaTeX",
+        "matplotlib_renderer": "Matplotlib MathText",
         "group_name_prompt": "Enter a new group name",
         "group_name_title": "Add group",
         "no_group_selected": "Please select a group first.",
@@ -209,8 +232,11 @@ def launch_gui() -> None:
     background_group = tk.StringVar(value=str(saved["background_group"]))
     background_image_id = tk.StringVar(value=str(saved["background_image_id"]))
     show_content_panel = tk.BooleanVar(value=bool(saved["show_content_panel"]))
+    panel_opacity_var = tk.IntVar(value=int(saved["panel_opacity"]))
     text_font_family = tk.StringVar(value=str(saved["text_font_family"]))
     math_font_family = tk.StringVar(value=str(saved["math_font_family"]))
+    initial_formula_renderer = str(saved["formula_renderer"]) if str(saved["formula_renderer"]) in {"auto", "tectonic", "matplotlib"} else "auto"
+    formula_renderer = tk.StringVar(value=initial_formula_renderer)
     text_color = tk.StringVar(value=str(saved["text_color"]))
     math_color = tk.StringVar(value=str(saved["math_color"]))
     status_var = tk.StringVar(value=STRINGS[language.get()]["ready"])
@@ -321,26 +347,39 @@ def launch_gui() -> None:
     math_font_box = ttk.Combobox(style_frame, state="readonly", width=22)
     math_font_box.grid(row=0, column=3, sticky="ew", padx=(8, 0), pady=(0, 10))
 
+    widgets["formula_renderer_label"] = ttk.Label(style_frame)
+    widgets["formula_renderer_label"].grid(row=1, column=0, sticky="w")
+    formula_renderer_box = ttk.Combobox(style_frame, state="readonly", width=22)
+    formula_renderer_box.grid(row=1, column=1, sticky="ew", padx=(8, 16), pady=(0, 10))
+    widgets["formula_status_caption"] = ttk.Label(style_frame, style="Field.TLabel")
+    widgets["formula_status_caption"].grid(row=1, column=2, sticky="w")
+    widgets["formula_status_value"] = ttk.Label(style_frame, style="Field.TLabel", wraplength=260, justify="left")
+    widgets["formula_status_value"].grid(row=1, column=3, sticky="w")
+
     widgets["text_color_label"] = ttk.Label(style_frame)
-    widgets["text_color_label"].grid(row=1, column=0, sticky="w")
+    widgets["text_color_label"].grid(row=2, column=0, sticky="w")
     text_color_row = ttk.Frame(style_frame, style="App.TFrame")
-    text_color_row.grid(row=1, column=1, sticky="w", padx=(8, 16), pady=(0, 10))
+    text_color_row.grid(row=2, column=1, sticky="w", padx=(8, 16), pady=(0, 10))
     widgets["text_color_button"] = ttk.Button(text_color_row, style="Ghost.TButton")
     widgets["text_color_button"].pack(side="left")
     text_color_preview = tk.Label(text_color_row, width=10, relief="solid", bd=1, bg=text_color.get())
     text_color_preview.pack(side="left", padx=(8, 0))
 
     widgets["math_color_label"] = ttk.Label(style_frame)
-    widgets["math_color_label"].grid(row=1, column=2, sticky="w")
+    widgets["math_color_label"].grid(row=2, column=2, sticky="w")
     math_color_row = ttk.Frame(style_frame, style="App.TFrame")
-    math_color_row.grid(row=1, column=3, sticky="w", padx=(8, 0), pady=(0, 10))
+    math_color_row.grid(row=2, column=3, sticky="w", padx=(8, 0), pady=(0, 10))
     widgets["math_color_button"] = ttk.Button(math_color_row, style="Ghost.TButton")
     widgets["math_color_button"].pack(side="left")
     math_color_preview = tk.Label(math_color_row, width=10, relief="solid", bd=1, bg=math_color.get())
     math_color_preview.pack(side="left", padx=(8, 0))
 
     widgets["panel_check"] = ttk.Checkbutton(style_frame, variable=show_content_panel)
-    widgets["panel_check"].grid(row=2, column=0, columnspan=4, sticky="w")
+    widgets["panel_check"].grid(row=3, column=0, columnspan=4, sticky="w")
+    widgets["panel_opacity_label"] = ttk.Label(style_frame)
+    widgets["panel_opacity_label"].grid(row=4, column=0, sticky="w", pady=(8, 0))
+    panel_opacity_scale = tk.Scale(style_frame, from_=0, to=255, orient="horizontal", variable=panel_opacity_var, bg=SURFACE, fg=TEXT, highlightthickness=0, relief="flat", length=260)
+    panel_opacity_scale.grid(row=4, column=1, columnspan=3, sticky="ew", pady=(8, 0))
 
     right = ttk.LabelFrame(frame, padding=12)
     right.grid(row=1, column=1, rowspan=2, sticky="nsew")
@@ -385,10 +424,12 @@ def launch_gui() -> None:
     action_row.grid(row=1, column=0, sticky="ew")
     action_row.columnconfigure(0, weight=1)
     ttk.Label(action_row, textvariable=status_var, style="Subtle.TLabel").grid(row=0, column=0, sticky="w")
-    widgets["clear_button"] = ttk.Button(action_row, style="Danger.TButton")
-    widgets["clear_button"].grid(row=0, column=1, sticky="e", padx=(0, 8))
+    widgets["clear_generated_button"] = ttk.Button(action_row, style="Ghost.TButton")
+    widgets["clear_generated_button"].grid(row=0, column=1, sticky="e", padx=(0, 8))
+    widgets["clear_library_button"] = ttk.Button(action_row, style="Danger.TButton")
+    widgets["clear_library_button"].grid(row=0, column=2, sticky="e", padx=(0, 8))
     widgets["run_button"] = ttk.Button(action_row, style="Primary.TButton")
-    widgets["run_button"].grid(row=0, column=2, sticky="e")
+    widgets["run_button"].grid(row=0, column=3, sticky="e")
 
     device_label_to_key = {profile.label: profile.key for profile in DEVICE_PROFILES}
     device_box["values"] = [profile.label for profile in DEVICE_PROFILES]
@@ -421,6 +462,42 @@ def launch_gui() -> None:
                 return mode
         return "white"
 
+    def renderer_label(renderer_key: str) -> str:
+        mapping = {
+            "auto": tr("auto_renderer"),
+            "tectonic": tr("tectonic_renderer"),
+            "matplotlib": tr("matplotlib_renderer"),
+        }
+        return mapping.get(renderer_key, tr("auto_renderer"))
+
+    def renderer_from_label(label: str) -> str:
+        for _, key in FORMULA_RENDERER_CHOICES:
+            if renderer_label(key) == label:
+                return key
+        return "auto"
+
+    def renderer_status_text() -> str:
+        status = describe_formula_support(formula_renderer.get())
+        if language.get() == "zh":
+            replacements = [
+                ("Formula renderer: Auto selected Tectonic LaTeX", "???? Tectonic LaTeX"),
+                ("Formula renderer: Auto selected Matplotlib MathText", "???? Matplotlib MathText"),
+                ("Formula renderer: Tectonic LaTeX", "?? Tectonic LaTeX"),
+                ("Formula renderer: Matplotlib MathText", "?? Matplotlib MathText"),
+                ("Formula renderer: Tectonic unavailable, fell back to Matplotlib", "Tectonic ???????? Matplotlib"),
+                ("Formula renderer: Tectonic unavailable, plain text fallback", "Tectonic ????????????"),
+                ("Formula renderer: Matplotlib unavailable, plain text fallback", "Matplotlib ????????????"),
+                ("Formula renderer: No backend available, plain text fallback", "?????????????????"),
+            ]
+            for source, target in replacements:
+                if status == source:
+                    return target
+        return status.removeprefix("Formula renderer: ").strip()
+
+
+    def refresh_formula_status() -> None:
+        widgets["formula_status_value"].configure(text=renderer_status_text())
+
     def current_settings() -> dict[str, object]:
         return {
             "language": language.get(),
@@ -435,6 +512,13 @@ def launch_gui() -> None:
             "background_mode": background_mode.get(),
             "background_group": background_group.get(),
             "background_image_id": background_image_id.get(),
+            "show_content_panel": show_content_panel.get(),
+            "panel_opacity": panel_opacity_var.get(),
+            "text_font_family": text_font_family.get(),
+            "math_font_family": math_font_family.get(),
+            "formula_renderer": formula_renderer.get(),
+            "text_color": text_color.get(),
+            "math_color": math_color.get(),
         }
 
     def persist_settings() -> None:
@@ -545,18 +629,25 @@ def launch_gui() -> None:
         widgets["delete_group_button"].configure(text=tr("delete_group"))
         widgets["add_images_button"].configure(text=tr("add_images"))
         widgets["delete_image_button"].configure(text=tr("delete_image"))
-        widgets["clear_button"].configure(text=tr("clear_all"))
+        widgets["clear_generated_button"].configure(text=tr("clear_generated"))
+        widgets["clear_library_button"].configure(text=tr("clear_library"))
         widgets["run_button"].configure(text=tr("run"))
         widgets["style_frame"].configure(text=tr("style_section"))
         widgets["text_font_label"].configure(text=tr("text_font"))
         widgets["math_font_label"].configure(text=tr("formula_font"))
+        widgets["formula_renderer_label"].configure(text=tr("formula_renderer"))
+        widgets["formula_status_caption"].configure(text=tr("formula_status_label"))
         widgets["text_color_label"].configure(text=tr("text_color"))
         widgets["math_color_label"].configure(text=tr("formula_color"))
         widgets["text_color_button"].configure(text=tr("pick_color"))
         widgets["math_color_button"].configure(text=tr("pick_color"))
         widgets["panel_check"].configure(text=tr("show_panel"))
+        widgets["panel_opacity_label"].configure(text=tr("panel_opacity"))
         bg_mode_box["values"] = [mode_label(mode) for mode in MODE_OPTIONS]
         bg_mode_box.set(mode_label(background_mode.get()))
+        formula_renderer_box["values"] = [renderer_label(key) for _, key in FORMULA_RENDERER_CHOICES]
+        formula_renderer_box.set(renderer_label(formula_renderer.get()))
+        refresh_formula_status()
         if status_var.get() in {STRINGS["zh"]["ready"], STRINGS["en"]["ready"]}:
             status_var.set(tr("ready"))
         refresh_background_choices()
@@ -637,19 +728,26 @@ def launch_gui() -> None:
         refresh_group_list()
         persist_settings()
 
-    def handle_clear_all() -> None:
-        if not messagebox.askyesno(tr("reset_confirm_title"), tr("reset_confirm_message")):
+    def handle_clear_generated() -> None:
+        if not messagebox.askyesno(tr("clear_generated_confirm_title"), tr("clear_generated_confirm_message")):
             return
         chosen_cloud_dir = Path(cloud_dir.get().strip()).expanduser() if cloud_dir.get().strip() else None
-        summary = reset_formula_memory_and_backgrounds(
+        summary = clear_formula_memory(
             repo_dir=repo_dir,
             output_dir_arg=output_dir.get().strip() or ".dailytipsapp",
             cloud_dir=chosen_cloud_dir,
-            background_library_dir=background_library_dir,
         )
+        append_log(tr("clear_generated_result", metadata=summary.removed_metadata_count, cloud=summary.removed_cloud_count, index=summary.removed_index_count))
+        status_var.set(tr("clear_generated_done"))
+        persist_settings()
+
+    def handle_clear_library() -> None:
+        if not messagebox.askyesno(tr("clear_library_confirm_title"), tr("clear_library_confirm_message")):
+            return
+        summary = clear_backgrounds(background_library_dir)
         refresh_group_list()
-        append_log(tr("reset_result", metadata=summary.removed_metadata_count, cloud=summary.removed_cloud_count, index=summary.removed_index_count, backgrounds=summary.removed_background_count))
-        status_var.set(tr("reset_done"))
+        append_log(tr("clear_library_result", backgrounds=summary.removed_background_count))
+        status_var.set(tr("clear_library_done"))
         persist_settings()
 
     def on_group_select(_: object = None) -> None:
@@ -701,6 +799,11 @@ def launch_gui() -> None:
         math_font_family.set(math_font_label_to_key.get(math_font_box.get(), MATH_FONT_CHOICES[0][1]))
         persist_settings()
 
+    def on_formula_renderer_change(_: object = None) -> None:
+        formula_renderer.set(renderer_from_label(formula_renderer_box.get()))
+        refresh_formula_status()
+        persist_settings()
+
     def run_clicked() -> None:
         log_box.delete("1.0", "end")
         status_var.set(tr("running"))
@@ -732,14 +835,16 @@ def launch_gui() -> None:
             ),
             background_library_dir=background_library_dir,
             show_content_panel=show_content_panel.get(),
+            panel_opacity=panel_opacity_var.get(),
             text_font_family=text_font_family.get(),
             math_font_family=math_font_family.get(),
+            formula_renderer=formula_renderer.get(),
             text_color=text_color.get(),
             math_color=math_color.get(),
         )
 
         persist_settings()
-        append_log(tr("formula_support"))
+        append_log(describe_formula_support(formula_renderer.get()))
         append_log(tr("preparing"))
 
         try:
@@ -778,7 +883,8 @@ def launch_gui() -> None:
     widgets["delete_group_button"].configure(command=handle_delete_group)
     widgets["add_images_button"].configure(command=handle_add_images)
     widgets["delete_image_button"].configure(command=handle_delete_image)
-    widgets["clear_button"].configure(command=handle_clear_all)
+    widgets["clear_generated_button"].configure(command=handle_clear_generated)
+    widgets["clear_library_button"].configure(command=handle_clear_library)
     widgets["run_button"].configure(command=run_clicked)
     widgets["text_color_button"].configure(command=lambda: choose_color(text_color, text_color_preview))
     widgets["math_color_button"].configure(command=lambda: choose_color(math_color, math_color_preview))
@@ -790,9 +896,12 @@ def launch_gui() -> None:
     image_choice_box.bind("<<ComboboxSelected>>", on_image_choice_change)
     text_font_box.bind("<<ComboboxSelected>>", on_text_font_change)
     math_font_box.bind("<<ComboboxSelected>>", on_math_font_change)
+    formula_renderer_box.bind("<<ComboboxSelected>>", on_formula_renderer_change)
     group_list.bind("<<ListboxSelect>>", on_group_select)
     image_list.bind("<<ListboxSelect>>", on_image_select)
     show_content_panel.trace_add("write", lambda *_: persist_settings())
+    panel_opacity_var.trace_add("write", lambda *_: persist_settings())
+    formula_renderer.trace_add("write", lambda *_: persist_settings())
 
     update_color_preview(text_color_preview, text_color.get())
     update_color_preview(math_color_preview, math_color.get())
@@ -826,6 +935,14 @@ def _selected_image_id(image_list: tk.Listbox, group_name: str, library_root: Pa
         return images[index].id
     return ""
 
+def _preferred_ui_font(root: tk.Tk) -> str:
+    available = set(tkfont.families(root))
+    for family in ("Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", "Arial Unicode MS", "Segoe UI"):
+        if family in available:
+            return family
+    return "TkDefaultFont"
+
+
 def _apply_styles(root: tk.Tk) -> None:
     style = ttk.Style(root)
     try:
@@ -833,14 +950,20 @@ def _apply_styles(root: tk.Tk) -> None:
     except tk.TclError:
         pass
 
+    ui_font = _preferred_ui_font(root)
+    root.option_add("*Font", (ui_font, 10))
+    root.option_add("*Listbox.Font", (ui_font, 10))
+    root.option_add("*Text.Font", (ui_font, 10))
+    root.option_add("*Scale.Font", (ui_font, 9))
+
     style.configure("App.TFrame", background=SURFACE)
     style.configure("TLabelframe", background=SURFACE, borderwidth=0, relief="flat")
-    style.configure("TLabelframe.Label", background=SURFACE, foreground=TEXT, font=("Segoe UI", 11, "bold"))
+    style.configure("TLabelframe.Label", background=SURFACE, foreground=TEXT, font=(ui_font, 11, "bold"))
     style.configure("TFrame", background=SURFACE)
-    style.configure("TLabel", background=SURFACE, foreground=TEXT, font=("Segoe UI", 10))
-    style.configure("Field.TLabel", background=SURFACE, foreground=MUTED, font=("Segoe UI", 9))
-    style.configure("TCheckbutton", background=SURFACE, foreground=TEXT, font=("Segoe UI", 10))
-    style.configure("Subtle.TLabel", background=SURFACE, foreground=MUTED, font=("Segoe UI", 9))
+    style.configure("TLabel", background=SURFACE, foreground=TEXT, font=(ui_font, 10))
+    style.configure("Field.TLabel", background=SURFACE, foreground=MUTED, font=(ui_font, 9))
+    style.configure("TCheckbutton", background=SURFACE, foreground=TEXT, font=(ui_font, 10))
+    style.configure("Subtle.TLabel", background=SURFACE, foreground=MUTED, font=(ui_font, 9))
     style.configure(
         "TEntry",
         fieldbackground=CARD,
@@ -851,6 +974,7 @@ def _apply_styles(root: tk.Tk) -> None:
         lightcolor=BORDER,
         darkcolor=BORDER,
         padding=8,
+        font=(ui_font, 10),
     )
     style.configure(
         "TCombobox",
@@ -862,6 +986,7 @@ def _apply_styles(root: tk.Tk) -> None:
         darkcolor=BORDER,
         arrowsize=14,
         padding=6,
+        font=(ui_font, 10),
     )
     style.map("TCombobox", fieldbackground=[("readonly", CARD)], foreground=[("readonly", TEXT)])
     style.configure(
@@ -871,7 +996,7 @@ def _apply_styles(root: tk.Tk) -> None:
         borderwidth=0,
         focusthickness=0,
         padding=(14, 9),
-        font=("Segoe UI", 10, "bold"),
+        font=(ui_font, 10, "bold"),
     )
     style.map(
         "Primary.TButton",
@@ -885,7 +1010,7 @@ def _apply_styles(root: tk.Tk) -> None:
         borderwidth=1,
         focusthickness=0,
         padding=(12, 8),
-        font=("Segoe UI", 10),
+        font=(ui_font, 10),
     )
     style.map(
         "Ghost.TButton",
@@ -899,7 +1024,7 @@ def _apply_styles(root: tk.Tk) -> None:
         borderwidth=0,
         focusthickness=0,
         padding=(12, 8),
-        font=("Segoe UI", 10, "bold"),
+        font=(ui_font, 10, "bold"),
     )
     style.map(
         "Danger.TButton",

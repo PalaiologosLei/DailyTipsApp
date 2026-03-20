@@ -9,3 +9,7 @@ assets/backgrounds/**
 !assets/backgrounds/
 !assets/backgrounds/default/
 !assets/backgrounds/default/.gitkeep
+node_modules/
+dist/
+src-tauri/target/
+.vite/

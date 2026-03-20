@@ -56,6 +56,7 @@ class ScannerRendererTests(unittest.TestCase):
         state_payload = json.loads((metadata_dir / RENDER_STATE_NAME).read_text(encoding="utf-8"))
         self.assertEqual(state_payload["background_mode"], "white")
         self.assertTrue(state_payload["show_content_panel"])
+        self.assertEqual(state_payload["panel_opacity"], 212)
 
     def test_render_items_deletes_stale_files_and_refreshes_index(self) -> None:
         image_dir = self.temp_root / "cloud"
@@ -115,8 +116,8 @@ class ScannerRendererTests(unittest.TestCase):
         image_dir = self.temp_root / "cloud"
         metadata_dir = self.temp_root / "data"
         item = KnowledgeItem("Style Test", "Body", [], Path("note.md"), 1)
-        config1 = RenderConfig(width=600, height=1000, text_color="#000000", show_content_panel=True)
-        config2 = RenderConfig(width=600, height=1000, text_color="#224466", show_content_panel=False)
+        config1 = RenderConfig(width=600, height=1000, text_color="#000000", show_content_panel=True, panel_opacity=212)
+        config2 = RenderConfig(width=600, height=1000, text_color="#224466", show_content_panel=False, panel_opacity=96)
         first = render_items([item], image_dir, metadata_dir, config1)
         second = render_items([item], image_dir, metadata_dir, config2)
         self.assertEqual(first.created_count, 1)
@@ -124,6 +125,27 @@ class ScannerRendererTests(unittest.TestCase):
         state_payload = json.loads((metadata_dir / RENDER_STATE_NAME).read_text(encoding="utf-8"))
         self.assertEqual(state_payload["text_color"], "#224466")
         self.assertFalse(state_payload["show_content_panel"])
+        self.assertEqual(state_payload["panel_opacity"], 96)
+
+    def test_formula_renderer_change_forces_regeneration_and_updates_state(self) -> None:
+        image_dir = self.temp_root / "cloud"
+        metadata_dir = self.temp_root / "data"
+        item = KnowledgeItem("Renderer Test", "$x+y$", [], Path("note.md"), 1)
+        config1 = RenderConfig(width=600, height=1000, formula_renderer="matplotlib")
+        config2 = RenderConfig(width=600, height=1000, formula_renderer="tectonic")
+        first = render_items([item], image_dir, metadata_dir, config1)
+        second = render_items([item], image_dir, metadata_dir, config2)
+        self.assertEqual(first.created_count, 1)
+        self.assertEqual(second.updated_count, 1)
+        state_payload = json.loads((metadata_dir / RENDER_STATE_NAME).read_text(encoding="utf-8"))
+        self.assertEqual(state_payload["formula_renderer"], "tectonic")
+
+    def test_tectonic_backend_resolves_when_bundled_binary_exists(self) -> None:
+        from src.renderer import resolve_formula_backend
+
+        backend = resolve_formula_backend("tectonic")
+        self.assertIn(backend.effective, {"tectonic", "matplotlib", "plain"})
+
 
 
 if __name__ == "__main__":

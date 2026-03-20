@@ -39,6 +39,18 @@ class ResetSummary:
     removed_background_count: int
 
 
+
+
+@dataclass(slots=True)
+class ClearFormulaSummary:
+    removed_metadata_count: int
+    removed_cloud_count: int
+    removed_index_count: int
+
+
+@dataclass(slots=True)
+class ClearBackgroundSummary:
+    removed_background_count: int
 def run_app(
     repo_dir: Path,
     notes_dir: Path | None,
@@ -86,19 +98,36 @@ def run_app(
         source.cleanup()
 
 
+def clear_formula_memory(
+    repo_dir: Path,
+    output_dir_arg: str,
+    cloud_dir: Path | None,
+) -> ClearFormulaSummary:
+    data_dir = (repo_dir / output_dir_arg).resolve()
+    resolved_cloud_dir = cloud_dir.resolve() if cloud_dir is not None else None
+    clear_summary = clear_generated_outputs(data_dir, resolved_cloud_dir)
+    return ClearFormulaSummary(
+        removed_metadata_count=clear_summary.removed_metadata_count,
+        removed_cloud_count=clear_summary.removed_cloud_count,
+        removed_index_count=clear_summary.removed_index_count,
+    )
+
+
+def clear_backgrounds(background_library_dir: Path) -> ClearBackgroundSummary:
+    return ClearBackgroundSummary(removed_background_count=clear_background_library(background_library_dir))
+
+
 def reset_formula_memory_and_backgrounds(
     repo_dir: Path,
     output_dir_arg: str,
     cloud_dir: Path | None,
     background_library_dir: Path,
 ) -> ResetSummary:
-    data_dir = (repo_dir / output_dir_arg).resolve()
-    resolved_cloud_dir = cloud_dir.resolve() if cloud_dir is not None else None
-    clear_summary = clear_generated_outputs(data_dir, resolved_cloud_dir)
-    removed_background_count = clear_background_library(background_library_dir)
+    formula_summary = clear_formula_memory(repo_dir, output_dir_arg, cloud_dir)
+    background_summary = clear_backgrounds(background_library_dir)
     return ResetSummary(
-        removed_metadata_count=clear_summary.removed_metadata_count,
-        removed_cloud_count=clear_summary.removed_cloud_count,
-        removed_index_count=clear_summary.removed_index_count,
-        removed_background_count=removed_background_count,
+        removed_metadata_count=formula_summary.removed_metadata_count,
+        removed_cloud_count=formula_summary.removed_cloud_count,
+        removed_index_count=formula_summary.removed_index_count,
+        removed_background_count=background_summary.removed_background_count,
     )

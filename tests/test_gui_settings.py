@@ -40,8 +40,10 @@ class GuiSettingsTests(unittest.TestCase):
                 "background_group": "nature",
                 "background_image_id": "nature/a.png",
                 "show_content_panel": False,
+                "panel_opacity": 128,
                 "text_font_family": "simhei",
                 "math_font_family": "stixsans",
+                "formula_renderer": "tectonic",
                 "text_color": "#123456",
                 "math_color": "#654321",
             },
@@ -51,15 +53,17 @@ class GuiSettingsTests(unittest.TestCase):
         self.assertEqual(loaded["background_mode"], "random_group")
         self.assertEqual(loaded["cloud_dir"], "C:/Users/test/iCloudDrive/DailyTips")
         self.assertFalse(loaded["show_content_panel"])
+        self.assertEqual(loaded["panel_opacity"], 128)
         self.assertEqual(loaded["text_font_family"], "simhei")
         self.assertEqual(loaded["math_font_family"], "stixsans")
+        self.assertEqual(loaded["formula_renderer"], "tectonic")
         self.assertEqual(loaded["text_color"], "#123456")
         self.assertEqual(loaded["math_color"], "#654321")
         raw = json.loads(self.settings_path.read_text(encoding="utf-8"))
         self.assertEqual(raw["width"], "1206")
 
     def test_device_profile_contains_iphone_16_pro_max(self) -> None:
-        profile = get_device_profile("iphone_16_pro_max")
+        profile = get_device_profile("iphone_17_pro_max")
         self.assertEqual((profile.width, profile.height), (1320, 2868))
 
 

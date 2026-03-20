@@ -19,6 +19,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cloud-dir", help="Directory in iCloud, OneDrive, or another synced folder used to store the final images.")
     parser.add_argument("--width", type=int, default=DEFAULT_WIDTH, help="Image width in pixels.")
     parser.add_argument("--height", type=int, default=DEFAULT_HEIGHT, help="Image height in pixels.")
+    parser.add_argument("--formula-renderer", choices=["auto", "tectonic", "matplotlib"], default="auto", help="Formula rendering backend.")
     parser.add_argument("--gui", action="store_true", help="Launch the simple desktop GUI.")
     return parser
 
@@ -41,7 +42,7 @@ def main() -> int:
         return 2
 
     repo_dir = Path(__file__).resolve().parent.parent
-    render_config = RenderConfig(width=args.width, height=args.height, background_selection=BackgroundSelection())
+    render_config = RenderConfig(width=args.width, height=args.height, background_selection=BackgroundSelection(), formula_renderer=args.formula_renderer)
 
     try:
         summary = run_app(
