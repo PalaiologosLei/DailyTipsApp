@@ -1,27 +1,23 @@
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RunPayload {
-    source_mode: String,
-    notes_dir: String,
-    github_url: String,
-    cloud_dir: String,
-    output_dir: String,
-    width: i32,
-    height: i32,
-    formula_renderer: String,
+    command: String,
+    payload: Value,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct RunResponse {
+struct ApiResponse {
     success: bool,
     exit_code: i32,
     stdout: String,
     stderr: String,
+    data: Option<Value>,
 }
 
 #[derive(Debug, Serialize)]
@@ -40,7 +36,7 @@ fn get_runtime_status() -> Result<RuntimeStatus, String> {
     let python = find_python_command();
     let python_summary = match &python {
         Some((program, prefix)) => format!("{} {}", program.display(), prefix.join(" ")).trim().to_string(),
-        None => "Python not found in PATH".to_string(),
+        None => "Python not found in PATH or bundled Miniconda".to_string(),
     };
     let tectonic = repo_root.join("vendor").join("tectonic").join("tectonic.exe");
     let tectonic_summary = if tectonic.exists() {
@@ -58,56 +54,54 @@ fn get_runtime_status() -> Result<RuntimeStatus, String> {
 }
 
 #[tauri::command]
-fn run_python_job(payload: RunPayload) -> Result<RunResponse, String> {
+fn run_python_api(request: RunPayload) -> Result<ApiResponse, String> {
     let repo_root = resolve_repo_root()?;
-    let (program, prefix) = find_python_command().ok_or_else(|| "Python executable not found in PATH".to_string())?;
+    let (program, prefix) = find_python_command().ok_or_else(|| "Python executable not found in PATH or bundled Miniconda".to_string())?;
     let mut command = Command::new(program);
     for arg in prefix {
         command.arg(arg);
     }
     command.current_dir(&repo_root);
-    command.arg("-m").arg("src.main");
-
-    if payload.source_mode == "local" {
-        let notes_dir = payload.notes_dir.trim();
-        if notes_dir.is_empty() {
-            return Err("Notes directory is required in local mode".to_string());
-        }
-        command.arg("--notes-dir").arg(notes_dir);
-    } else {
-        let github_url = payload.github_url.trim();
-        if github_url.is_empty() {
-            return Err("GitHub URL is required in GitHub mode".to_string());
-        }
-        command.arg("--github-url").arg(github_url);
-    }
-
-    let cloud_dir = payload.cloud_dir.trim();
-    if cloud_dir.is_empty() {
-        return Err("Cloud image directory is required".to_string());
-    }
-
     command
-        .arg("--cloud-dir").arg(cloud_dir)
-        .arg("--output-dir").arg(payload.output_dir.trim())
-        .arg("--width").arg(payload.width.to_string())
-        .arg("--height").arg(payload.height.to_string())
-        .arg("--formula-renderer").arg(payload.formula_renderer.trim());
+        .arg("-m")
+        .arg("src.desktop_api")
+        .arg(request.command)
+        .arg("--payload")
+        .arg(request.payload.to_string());
 
     let output = command.output().map_err(|error| error.to_string())?;
-    Ok(RunResponse {
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let data = if output.status.success() {
+        serde_json::from_str::<Value>(stdout.trim()).ok()
+    } else {
+        None
+    };
+
+    Ok(ApiResponse {
         success: output.status.success(),
         exit_code: output.status.code().unwrap_or(-1),
-        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+        stdout,
+        stderr,
+        data,
     })
 }
 
 fn find_python_command() -> Option<(PathBuf, Vec<String>)> {
+    let bundled = PathBuf::from(r"D:\Applications\miniconda\python.exe");
     let candidates = [
+        (PathBuf::from(r"D:\Applications\miniconda\python.exe"), Vec::<String>::new()),
         (PathBuf::from("python"), Vec::<String>::new()),
         (PathBuf::from("py"), vec!["-3".to_string()]),
     ];
+
+    if bundled.exists() {
+        let mut command = Command::new(&bundled);
+        let result = command.arg("--version").output();
+        if matches!(result, Ok(output) if output.status.success()) {
+            return Some((bundled, Vec::new()));
+        }
+    }
 
     for (program, prefix) in candidates {
         let mut command = Command::new(&program);
@@ -147,7 +141,8 @@ fn resolve_repo_root() -> Result<PathBuf, String> {
 
 fn main() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![get_runtime_status, run_python_job])
+        .plugin(tauri_plugin_dialog::init())
+        .invoke_handler(tauri::generate_handler![get_runtime_status, run_python_api])
         .run(tauri::generate_context!())
         .expect("failed to run DailyTipsApp desktop shell");
 }
