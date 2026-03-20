@@ -25,8 +25,9 @@ from .renderer import (
     FORMULA_RENDERER_CHOICES,
     MATH_FONT_CHOICES,
     TEXT_FONT_CHOICES,
+    build_render_job,
     describe_formula_support,
-    render_item,
+    render_job,
     resolve_formula_backend,
 )
 
@@ -175,7 +176,8 @@ def _render_prepared(repo_dir: Path, payload: dict[str, Any]) -> dict[str, Any]:
         )
         output_path = cloud_dir / output_file
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        render_item(item, output_path, render_config)
+        job = build_render_job(item, output_path, render_config)
+        render_job(job, render_config)
         rendered_count += 1
 
     return {

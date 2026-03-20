@@ -37,6 +37,13 @@ class RenderConfig:
 
 
 @dataclass(slots=True)
+class PreparedRenderJob:
+    item: KnowledgeItem
+    output_path: Path
+    background_path: Path | None = None
+
+
+@dataclass(slots=True)
 class RenderResult:
     item: KnowledgeItem
     image_path: Path

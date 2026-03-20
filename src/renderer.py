@@ -15,7 +15,7 @@ from PIL import Image, ImageColor, ImageDraw, ImageFont
 
 from .background_library import choose_background_path
 from .cloud_sync import update_cloud_image_index
-from .models import KnowledgeItem, RenderConfig, RenderResult, RenderSummary
+from .models import KnowledgeItem, PreparedRenderJob, RenderConfig, RenderResult, RenderSummary
 
 DEFAULT_WIDTH = 1179
 DEFAULT_HEIGHT = 2556
@@ -177,11 +177,11 @@ def render_items(items: list[KnowledgeItem], image_dir: Path, metadata_dir: Path
     force_regenerate = previous_render_state != render_state
 
     for item in items:
-        item_key = _build_item_key(item)
-        background_path = _choose_background(render_config, item_key)
-        background_stamp = _background_stamp(background_path)
         file_name = _build_filename(item)
         image_path = image_dir / file_name
+        job = build_render_job(item, image_path, render_config)
+        item_key = _build_item_key(item)
+        background_stamp = _background_stamp(job.background_path)
         content_hash = _build_content_hash(item, render_config, background_stamp, formula_backend)
         previous = previous_entries.get(item_key)
 
@@ -190,7 +190,7 @@ def render_items(items: list[KnowledgeItem], image_dir: Path, metadata_dir: Path
             summary.unchanged_count += 1
         else:
             existed_before = image_path.exists()
-            render_item(item, image_path, render_config, formula_backend, background_path)
+            render_job(job, render_config, formula_backend)
             if previous or existed_before:
                 summary.updated_count += 1
                 status = "updated"
@@ -224,6 +224,20 @@ def render_items(items: list[KnowledgeItem], image_dir: Path, metadata_dir: Path
         update_cloud_image_index(image_dir)
 
     return summary
+
+
+def build_render_job(item: KnowledgeItem, output_path: Path, render_config: RenderConfig) -> PreparedRenderJob:
+    item_key = _build_item_key(item)
+    background_path = _choose_background(render_config, item_key)
+    return PreparedRenderJob(item=item, output_path=output_path, background_path=background_path)
+
+
+def render_job(
+    job: PreparedRenderJob,
+    render_config: RenderConfig,
+    formula_backend: FormulaBackend | None = None,
+) -> None:
+    render_item(job.item, job.output_path, render_config, formula_backend, job.background_path)
 
 
 def render_item(item: KnowledgeItem, output_path: Path, render_config: RenderConfig, formula_backend: FormulaBackend | None = None, background_path: Path | None = None) -> None:
