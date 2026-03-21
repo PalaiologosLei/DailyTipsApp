@@ -1,7 +1,5 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
-import { open } from '@tauri-apps/plugin-dialog'
 
 const booting = ref(true)
 const runState = ref('idle')
@@ -34,7 +32,30 @@ const settings = reactive({
   math_color: '#000000',
 })
 
+async function tauriInvoke(command, payload = {}) {
+  const globalInvoke = window.__TAURI__?.core?.invoke
+  if (typeof globalInvoke === 'function') {
+    return globalInvoke(command, payload)
+  }
+
+  const module = await import('@tauri-apps/api/core')
+  if (typeof module.invoke === 'function') {
+    return module.invoke(command, payload)
+  }
+
+  throw new Error('Tauri invoke is unavailable in the current runtime.')
+}
+
+async function tauriOpen(options) {
+  const module = await import('@tauri-apps/plugin-dialog')
+  if (typeof module.open === 'function') {
+    return module.open(options)
+  }
+  throw new Error('Tauri dialog plugin is unavailable in the current runtime.')
+}
+
 const isRunning = computed(() => runState.value === 'running')
+
 const rendererStatus = computed(() => {
   const effective = runtime.value?.formulaBackendEffective ?? runtime.value?.formula_backend_effective
   if (effective === 'tectonic') return '当前使用 Tectonic LaTeX'
@@ -42,10 +63,12 @@ const rendererStatus = computed(() => {
   if (effective === 'plain') return '当前回退到纯文本模式'
   return '正在检测公式渲染环境...'
 })
+
 const runtimeSummary = computed(() => {
   const pythonOk = runtime.value?.pythonOk ?? runtime.value?.python_ok
   const tectonicBundled = runtime.value?.tectonicBundled ?? runtime.value?.tectonic_bundled
   const repoRoot = runtime.value?.repoRoot ?? runtime.value?.repo_root ?? '-'
+
   return [
     pythonOk ? 'Python 渲染后端已就绪' : '未找到可用的 Python 渲染后端',
     tectonicBundled ? '已检测到内置 Tectonic' : '未检测到内置 Tectonic，将按规则回退',
@@ -53,6 +76,7 @@ const runtimeSummary = computed(() => {
     rendererStatus.value,
   ]
 })
+
 const specificImageOptions = computed(() => {
   if (!settings.background_group) return backgroundLibrary.value.images
   return backgroundLibrary.value.images.filter((image) => image.groupName === settings.background_group)
@@ -73,18 +97,6 @@ function normalizeOption(item) {
   }
 }
 
-function normalizeOptions(items) {
-  return Array.isArray(items)
-    ? items
-        .map(normalizeOption)
-        .map((item) => ({
-          ...item,
-          label: normalizeOptionLabel(item.key, item.label),
-        }))
-        .filter((item) => item.key)
-    : []
-}
-
 function normalizeOptionLabel(key, fallbackLabel) {
   const labelMap = {
     auto: '自动（推荐）',
@@ -101,6 +113,18 @@ function normalizeOptionLabel(key, fallbackLabel) {
     cm: 'Computer Modern',
   }
   return labelMap[key] ?? fallbackLabel ?? key
+}
+
+function normalizeOptions(items) {
+  return Array.isArray(items)
+    ? items
+        .map(normalizeOption)
+        .map((item) => ({
+          ...item,
+          label: normalizeOptionLabel(item.key, item.label),
+        }))
+        .filter((item) => item.key)
+    : []
 }
 
 function normalizeLibrary(library) {
@@ -181,7 +205,7 @@ function syncDeviceDimensions() {
 async function bootstrap() {
   booting.value = true
   try {
-    const data = await invoke('bootstrap_app_state')
+    const data = await tauriInvoke('bootstrap_app_state')
     applySettings(data?.settings ?? {})
     devices.value = normalizeOptions(data?.devices ?? data?.deviceProfiles)
     textFonts.value = normalizeOptions(data?.textFonts ?? data?.text_fonts)
@@ -202,7 +226,7 @@ async function bootstrap() {
 }
 
 async function persistSettingsNow() {
-  const data = await invoke('save_app_settings', { settings: { ...settings } })
+  const data = await tauriInvoke('save_app_settings', { settings: { ...settings } })
   applySettings(data?.settings ?? {})
   runtime.value = data?.runtime ?? runtime.value
 }
@@ -240,7 +264,7 @@ watch(
 )
 
 async function pickDirectory(fieldName) {
-  const selected = await open({ directory: true, multiple: false })
+  const selected = await tauriOpen({ directory: true, multiple: false })
   if (typeof selected === 'string') {
     settings[fieldName] = selected
   }
@@ -251,14 +275,14 @@ async function importImages() {
     appendLog('请先选择一个背景分组。')
     return
   }
-  const selected = await open({
+  const selected = await tauriOpen({
     multiple: true,
     filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp'] }],
   })
   if (!selected || !Array.isArray(selected) || selected.length === 0) return
 
   try {
-    const library = await invoke('import_background_images', {
+    const library = await tauriInvoke('import_background_images', {
       payload: { groupName: settings.background_group, paths: selected },
     })
     setLibrary(library)
@@ -274,7 +298,7 @@ async function previewRustScan() {
     return
   }
   try {
-    const summary = await invoke('scan_local_markdown', { payload: { notesDir: settings.local_path } })
+    const summary = await tauriInvoke('scan_local_markdown', { payload: { notesDir: settings.local_path } })
     rustScanSummary.value = summary
     appendLog(`Rust 预扫描完成：发现 ${summary.markdownFileCount} 个 Markdown 文件，识别 ${summary.itemCount} 个条目。`)
   } catch (error) {
@@ -286,7 +310,7 @@ async function runGenerator() {
   runState.value = 'running'
   outputLog.value = ''
   try {
-    const data = await invoke('run_generation_pipeline', { settings: { ...settings } })
+    const data = await tauriInvoke('run_generation_pipeline', { settings: { ...settings } })
     runtime.value = data?.runtime ?? runtime.value
     setLibrary(data?.backgroundLibrary ?? data?.background_library)
     const summary = data?.summary ?? {}
@@ -312,7 +336,7 @@ async function runGenerator() {
 async function clearGenerated() {
   if (!window.confirm('这会清空生成图片与元数据，是否继续？')) return
   try {
-    const summary = await invoke('clear_generated_outputs_in_rust', { settings: { ...settings } })
+    const summary = await tauriInvoke('clear_generated_outputs_in_rust', { settings: { ...settings } })
     appendLog(
       `已清空：元数据 ${summary.removedMetadataCount} 项，图片 ${summary.removedCloudCount} 张，索引 ${summary.removedIndexCount} 个。`,
     )
@@ -324,7 +348,7 @@ async function clearGenerated() {
 async function clearLibrary() {
   if (!window.confirm('这会清空背景图库中的用户图片，是否继续？')) return
   try {
-    const library = await invoke('clear_background_library')
+    const library = await tauriInvoke('clear_background_library')
     setLibrary(library)
     appendLog('背景图库已清空。')
   } catch (error) {
@@ -336,7 +360,7 @@ async function addGroup() {
   const name = window.prompt('请输入新分组名称：')?.trim()
   if (!name) return
   try {
-    const library = await invoke('create_background_group', { payload: { name } })
+    const library = await tauriInvoke('create_background_group', { payload: { name } })
     setLibrary(library)
     settings.background_group = name.replace(/[\\/]/g, '_')
     appendLog(`已创建分组：${settings.background_group}`)
@@ -350,7 +374,7 @@ async function deleteGroup() {
   if (!window.confirm(`确定删除分组 ${settings.background_group} 吗？`)) return
   try {
     const target = settings.background_group
-    const library = await invoke('delete_background_group', { payload: { groupName: target } })
+    const library = await tauriInvoke('delete_background_group', { payload: { groupName: target } })
     setLibrary(library)
     appendLog(`已删除分组：${target}`)
   } catch (error) {
@@ -363,7 +387,7 @@ async function deleteImage() {
   if (!window.confirm(`确定删除背景图 ${settings.background_image_id} 吗？`)) return
   try {
     const target = settings.background_image_id
-    const library = await invoke('delete_background_image', { payload: { imageId: target } })
+    const library = await tauriInvoke('delete_background_image', { payload: { imageId: target } })
     setLibrary(library)
     appendLog(`已删除背景图：${target}`)
   } catch (error) {
