@@ -20,14 +20,13 @@ from .background_library import (
 )
 from .device_profiles import DEVICE_PROFILES
 from .gui_settings import load_gui_settings, save_gui_settings
-from .models import BackgroundSelection, KnowledgeItem, RenderConfig
+from .models import BackgroundSelection, RenderConfig
+from .render_backend import PythonRendererBackend, RenderBackendError, build_prepared_requests
 from .renderer import (
     FORMULA_RENDERER_CHOICES,
     MATH_FONT_CHOICES,
     TEXT_FONT_CHOICES,
-    build_render_job,
     describe_formula_support,
-    render_job,
     resolve_formula_backend,
 )
 
@@ -63,7 +62,7 @@ def main() -> int:
 
     try:
         result = dispatch_command(repo_dir, args.command, payload)
-    except (AppError, BackgroundLibraryError, ValueError) as error:
+    except (AppError, BackgroundLibraryError, RenderBackendError, ValueError) as error:
         print(str(error), file=sys.stderr)
         return 1
     except Exception as error:
@@ -160,28 +159,13 @@ def _render_prepared(repo_dir: Path, payload: dict[str, Any]) -> dict[str, Any]:
     cloud_dir = _required_path(settings.get('cloud_dir'), 'Cloud image directory is required.').resolve()
     cloud_dir.mkdir(parents=True, exist_ok=True)
 
-    rendered_count = 0
-    for raw_item in raw_items:
-        if not isinstance(raw_item, dict):
-            continue
-        output_file = str(raw_item.get('output_file', '')).strip()
-        if not output_file:
-            raise ValueError('Prepared render item is missing output_file.')
-        item = KnowledgeItem(
-            title=str(raw_item.get('title', '')).strip(),
-            body=str(raw_item.get('body', '')).strip(),
-            notes=[str(note).strip() for note in raw_item.get('notes', []) if str(note).strip()],
-            source_path=Path(str(raw_item.get('source_path', ''))),
-            source_line=int(raw_item.get('source_line', 0) or 0),
-        )
-        output_path = cloud_dir / output_file
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        job = build_render_job(item, output_path, render_config)
-        render_job(job, render_config)
-        rendered_count += 1
+    prepared_items = [raw_item for raw_item in raw_items if isinstance(raw_item, dict)]
+    requests = build_prepared_requests(prepared_items, cloud_dir)
+    backend = PythonRendererBackend()
+    result = backend.render_prepared(requests, render_config)
 
     return {
-        'renderedCount': rendered_count,
+        'renderedCount': result.rendered_count,
         'runtime': _runtime_state(repo_dir, str(settings.get('formula_renderer', 'auto'))),
         'backgroundLibrary': _background_library_state(repo_dir),
     }

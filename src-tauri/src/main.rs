@@ -550,7 +550,9 @@ fn run_python_api(request: RunPayload) -> Result<ApiResponse, String> {
 fn runtime_status_for_renderer(repo_root: &Path, requested: &str) -> RuntimeStatus {
     let python = find_python_command();
     let python_summary = match &python {
-        Some((program, prefix)) => format!("{} {}", program.display(), prefix.join(" ")).trim().to_string(),
+        Some((program, prefix)) => format!("{} {}", program.display(), prefix.join(" "))
+            .trim()
+            .to_string(),
         None => "未找到可用的 Python 解释器".to_string(),
     };
 
@@ -1302,9 +1304,9 @@ fn strip_list_marker(content: &str) -> &str {
 }
 
 fn extract_title(content: &str) -> Option<String> {
-    let start = content.find('?')?;
-    let end = content[start + '?'.len_utf8()..].find('?')? + start + '?'.len_utf8();
-    let title = content[start + '?'.len_utf8()..end].trim().to_string();
+    let start = content.find('【')?;
+    let end = content[start + '【'.len_utf8()..].find('】')? + start + '【'.len_utf8();
+    let title = content[start + '【'.len_utf8()..end].trim().to_string();
     if title.is_empty() {
         None
     } else {

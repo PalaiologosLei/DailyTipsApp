@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import re
 from pathlib import Path
@@ -7,10 +7,11 @@ from .models import KnowledgeItem
 
 TITLE_PATTERN = re.compile(r"【([^】]+)】")
 LIST_MARKER_PATTERN = re.compile(r"^([-*+])\s+(.*)$")
+READ_ENCODINGS = ("utf-8", "utf-8-sig", "gbk", "gb18030")
 
 
 def parse_markdown_file(path: Path) -> list[KnowledgeItem]:
-    return parse_markdown_text(path.read_text(encoding="utf-8"), path)
+    return parse_markdown_text(_read_markdown_text(path), path)
 
 
 def parse_markdown_text(text: str, source_path: Path) -> list[KnowledgeItem]:
@@ -48,6 +49,15 @@ def parse_markdown_text(text: str, source_path: Path) -> list[KnowledgeItem]:
         )
 
     return items
+
+
+def _read_markdown_text(path: Path) -> str:
+    for encoding in READ_ENCODINGS:
+        try:
+            return path.read_text(encoding=encoding)
+        except UnicodeDecodeError:
+            continue
+    return path.read_text(encoding="utf-8", errors="ignore")
 
 
 def _collect_direct_children(lines: list[str], start_index: int, parent_indent: int) -> list[tuple[int, str]]:

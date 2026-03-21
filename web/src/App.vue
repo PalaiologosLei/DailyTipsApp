@@ -42,7 +42,7 @@ const selectedGroupImages = computed(() => {
 })
 
 function appendLog(message) {
-  outputLog.value = `${outputLog.value}${outputLog.value ? '\n' : ''}${message}`
+  outputLog.value = `${outputLog.value}${outputLog.value ? '\\n' : ''}${message}`
 }
 
 function applySettings(nextSettings = {}) {
@@ -222,7 +222,7 @@ async function addGroup() {
   try {
     const library = await invoke('create_background_group', { payload: { name } })
     setLibrary(library)
-    settings.background_group = name.replace(/[\\/]/g, '_')
+    settings.background_group = name.replace(/[\/]/g, '_')
     appendLog(`已创建分组：${settings.background_group}`)
   } catch (error) {
     appendLog(error.message)
