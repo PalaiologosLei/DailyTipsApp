@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
 use std::fs;
@@ -19,6 +19,7 @@ const RENDER_STATE_NAME: &str = "render_state.json";
 const RENDERER_VERSION: &str = "7";
 const DEFAULT_TEXT_COLOR: &str = "#000000";
 const DEFAULT_TOP_BLANK_RATIO: f64 = 1.0 / 3.0;
+const RENDER_CHUNK_SIZE: usize = 20;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -184,6 +185,16 @@ struct PipelineSummary {
     summary: Value,
     runtime: RuntimeStatus,
     background_library: BackgroundLibraryState,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct GenerationProgress {
+    stage: String,
+    message: String,
+    completed: usize,
+    total: usize,
+    percent: f64,
 }
 
 #[derive(Debug, Serialize)]
@@ -496,7 +507,13 @@ fn scan_local_markdown(payload: LocalScanPayload) -> Result<LocalScanSummary, St
 }
 
 #[tauri::command]
-fn run_generation_pipeline(app: tauri::AppHandle, settings: Value) -> Result<PipelineSummary, String> {
+async fn run_generation_pipeline(app: tauri::AppHandle, settings: Value) -> Result<PipelineSummary, String> {
+    tauri::async_runtime::spawn_blocking(move || run_generation_pipeline_sync(app, settings))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+fn run_generation_pipeline_sync(app: tauri::AppHandle, settings: Value) -> Result<PipelineSummary, String> {
     let repo_root = resolve_repo_root(Some(&app))?;
     let resource_root = resource_root_for_app(Some(&app));
     let merged = merge_settings(default_settings(), settings);
@@ -507,31 +524,62 @@ fn run_generation_pipeline(app: tauri::AppHandle, settings: Value) -> Result<Pip
         .filter(|value| !value.is_empty())
         .ok_or_else(|| "请先选择本地 Markdown 目录".to_string())?;
 
+    emit_generation_progress(&app, "scan", "正在扫描 Markdown...", 0, 0);
     let prepared = scan_local_markdown_summary(Path::new(notes_dir))?;
+    emit_generation_progress(
+        &app,
+        "plan",
+        format!("已识别 {} 个条目，正在规划增量渲染...", prepared.item_count),
+        0,
+        prepared.item_count,
+    );
     let runtime = runtime_status_for_renderer(
         &repo_root,
         resource_root.as_deref(),
         merged.get("formula_renderer").and_then(Value::as_str).unwrap_or("auto"),
     );
     let plan = build_render_plan(&repo_root, &merged, &runtime, &prepared.items)?;
+    let total_to_render = plan.render_queue.len();
 
-    if !plan.render_queue.is_empty() {
-        let payload = json!({
-            "settings": merged.clone(),
-            "items": plan.render_queue,
-        });
-        let data = execute_python_api(&repo_root, resource_root.as_deref(), "render-prepared", payload)?;
-        if !data.success {
-            return Err(
-                data.stderr
-                    .trim()
-                    .to_string()
-                    .if_empty_then(data.stdout.trim().to_string())
-                    .if_empty_then(format!("Python pipeline failed with exit code {}", data.exit_code)),
+    if total_to_render > 0 {
+        emit_generation_progress(
+            &app,
+            "render",
+            format!("开始生成图片，共 {} 张需要更新...", total_to_render),
+            0,
+            total_to_render,
+        );
+        let mut rendered = 0usize;
+        for chunk in plan.render_queue.chunks(RENDER_CHUNK_SIZE) {
+            let payload = json!({
+                "settings": merged.clone(),
+                "items": chunk.to_vec(),
+            });
+            let data = execute_python_api(&repo_root, resource_root.as_deref(), "render-prepared", payload)?;
+            if !data.success {
+                emit_generation_progress(&app, "error", "生成图片时出错。", rendered, total_to_render);
+                return Err(
+                    data.stderr
+                        .trim()
+                        .to_string()
+                        .if_empty_then(data.stdout.trim().to_string())
+                        .if_empty_then(format!("Python pipeline failed with exit code {}", data.exit_code)),
+                );
+            }
+            rendered += chunk.len();
+            emit_generation_progress(
+                &app,
+                "render",
+                format!("正在生成图片... {}/{}", rendered, total_to_render),
+                rendered,
+                total_to_render,
             );
         }
+    } else {
+        emit_generation_progress(&app, "render", "没有需要重新生成的图片。", 0, 0);
     }
 
+    emit_generation_progress(&app, "persist", "正在写入索引与元数据...", total_to_render, total_to_render);
     for stale_path in &plan.stale_files {
         if stale_path.exists() {
             fs::remove_file(stale_path).map_err(|error| error.to_string())?;
@@ -555,6 +603,20 @@ fn run_generation_pipeline(app: tauri::AppHandle, settings: Value) -> Result<Pip
         "unchanged_count": plan.unchanged_count,
         "deleted_count": plan.stale_files.len(),
     });
+
+    emit_generation_progress(
+        &app,
+        "done",
+        format!(
+            "生成完成：新增 {}，更新 {}，未变 {}，删除 {}。",
+            plan.created_count,
+            plan.updated_count,
+            plan.unchanged_count,
+            plan.stale_files.len()
+        ),
+        total_to_render,
+        total_to_render,
+    );
 
     Ok(PipelineSummary {
         summary,
@@ -1296,6 +1358,29 @@ fn execute_python_api(
         stderr,
         data,
     })
+}
+
+fn emit_generation_progress(
+    app: &tauri::AppHandle,
+    stage: &str,
+    message: impl Into<String>,
+    completed: usize,
+    total: usize,
+) {
+    let percent = if total == 0 {
+        if stage == "done" { 100.0 } else { 0.0 }
+    } else {
+        ((completed as f64 / total as f64) * 100.0).clamp(0.0, 100.0)
+    };
+
+    let payload = GenerationProgress {
+        stage: stage.to_string(),
+        message: message.into(),
+        completed,
+        total,
+        percent,
+    };
+    let _ = app.emit("generation-progress", payload);
 }
 
 fn write_payload_file(payload: &str) -> Result<PathBuf, String> {

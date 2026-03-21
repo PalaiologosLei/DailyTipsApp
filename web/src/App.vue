@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 
 const booting = ref(true)
 const runState = ref('idle')
@@ -12,6 +12,14 @@ const mathFonts = ref([])
 const formulaRenderers = ref([])
 const persistTimer = ref(null)
 const rustScanSummary = ref(null)
+const progress = reactive({
+  stage: 'idle',
+  message: '',
+  completed: 0,
+  total: 0,
+  percent: 0,
+})
+let removeProgressListener = null
 
 const settings = reactive({
   local_path: '',
@@ -54,7 +62,30 @@ async function tauriOpen(options) {
   throw new Error('Tauri dialog plugin is unavailable in the current runtime.')
 }
 
+async function tauriListen(eventName, handler) {
+  const globalListen = window.__TAURI__?.event?.listen
+  if (typeof globalListen === 'function') {
+    return globalListen(eventName, handler)
+  }
+
+  const module = await import('@tauri-apps/api/event')
+  if (typeof module.listen === 'function') {
+    return module.listen(eventName, handler)
+  }
+
+  throw new Error('Tauri event API is unavailable in the current runtime.')
+}
+
 const isRunning = computed(() => runState.value === 'running')
+const progressPercent = computed(() => {
+  if (typeof progress.percent === 'number' && Number.isFinite(progress.percent)) {
+    return Math.max(0, Math.min(100, progress.percent))
+  }
+  if (progress.total > 0) {
+    return Math.max(0, Math.min(100, (progress.completed / progress.total) * 100))
+  }
+  return 0
+})
 
 const rendererStatus = computed(() => {
   const effective = runtime.value?.formulaBackendEffective ?? runtime.value?.formula_backend_effective
@@ -144,6 +175,14 @@ function normalizeLibrary(library) {
 
 function appendLog(message) {
   outputLog.value = `${outputLog.value}${outputLog.value ? '\n' : ''}${message}`
+}
+
+function resetProgress() {
+  progress.stage = 'idle'
+  progress.message = ''
+  progress.completed = 0
+  progress.total = 0
+  progress.percent = 0
 }
 
 function applySettings(nextSettings = {}) {
@@ -309,6 +348,9 @@ async function previewRustScan() {
 async function runGenerator() {
   runState.value = 'running'
   outputLog.value = ''
+  resetProgress()
+  progress.stage = 'running'
+  progress.message = '正在准备生成任务...'
   try {
     const data = await tauriInvoke('run_generation_pipeline', { settings: { ...settings } })
     runtime.value = data?.runtime ?? runtime.value
@@ -326,8 +368,13 @@ async function runGenerator() {
     appendLog(`元数据目录：${summary.data_dir ?? summary.dataDir ?? '-'}`)
     appendLog(`云盘目录：${summary.cloud_dir ?? summary.cloudDir ?? '-'}`)
     appendLog(`索引文件：${summary.index_path ?? summary.indexPath ?? '-'}`)
+    progress.stage = 'done'
+    progress.message = '生成完成'
+    progress.percent = 100
     runState.value = 'success'
   } catch (error) {
+    progress.stage = 'error'
+    progress.message = error?.message ?? String(error)
     appendLog(error?.message ?? String(error))
     runState.value = 'error'
   }
@@ -427,8 +474,28 @@ async function deleteImage() {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
+  try {
+    removeProgressListener = await tauriListen('generation-progress', (event) => {
+      const payload = event?.payload ?? {}
+      progress.stage = payload.stage ?? 'running'
+      progress.message = payload.message ?? ''
+      progress.completed = payload.completed ?? 0
+      progress.total = payload.total ?? 0
+      progress.percent = payload.percent ?? 0
+    })
+  } catch (error) {
+    appendLog(`监听生成进度失败：${error?.message ?? error}`)
+  }
+
   bootstrap().catch(() => {})
+})
+
+onBeforeUnmount(() => {
+  if (typeof removeProgressListener === 'function') {
+    removeProgressListener()
+    removeProgressListener = null
+  }
 })
 </script>
 
@@ -590,6 +657,16 @@ onMounted(() => {
           </button>
         </div>
 
+        <div v-if="isRunning || progress.message" class="progress-card">
+          <div class="progress-head">
+            <strong>{{ progress.message || '处理中...' }}</strong>
+            <span>{{ progress.total > 0 ? `${progress.completed}/${progress.total}` : (isRunning ? '准备中' : '完成') }}</span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" :style="{ width: `${progressPercent}%` }"></div>
+          </div>
+        </div>
+
         <div v-if="rustScanSummary" class="preview-card">
           <h3>Rust 预扫描结果</h3>
           <p>Markdown 文件：{{ rustScanSummary.markdownFileCount }}</p>
@@ -706,13 +783,15 @@ h1 {
 .section-copy,
 .status-card p,
 .preview-card p,
+.progress-card span,
 small {
   color: #5f7691;
 }
 
 .status-card,
 .panel,
-.preview-card {
+.preview-card,
+.progress-card {
   background: rgba(255, 255, 255, 0.86);
   border: 1px solid rgba(110, 154, 191, 0.22);
   box-shadow: 0 18px 40px rgba(87, 121, 155, 0.12);
@@ -729,6 +808,38 @@ small {
   margin: 0 0 12px;
   font-weight: 700;
   color: #24486d;
+}
+
+.progress-card {
+  border-radius: 22px;
+  padding: 16px 18px;
+}
+
+.progress-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.progress-head strong {
+  color: #24486d;
+}
+
+.progress-bar {
+  height: 12px;
+  width: 100%;
+  border-radius: 999px;
+  background: rgba(80, 173, 201, 0.14);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #3a8dff 0%, #26c4cf 100%);
+  transition: width 0.2s ease;
 }
 
 .grid {
