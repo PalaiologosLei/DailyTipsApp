@@ -34,15 +34,92 @@ const settings = reactive({
   math_color: '#000000',
 })
 
-const rendererStatus = computed(() => runtime.value?.formulaSupport ?? '正在检测公式引擎...')
 const isRunning = computed(() => runState.value === 'running')
-const selectedGroupImages = computed(() => {
+const rendererStatus = computed(() => {
+  const effective = runtime.value?.formulaBackendEffective ?? runtime.value?.formula_backend_effective
+  if (effective === 'tectonic') return '当前使用 Tectonic LaTeX'
+  if (effective === 'matplotlib') return '当前使用 Matplotlib MathText'
+  if (effective === 'plain') return '当前回退到纯文本模式'
+  return '正在检测公式渲染环境...'
+})
+const runtimeSummary = computed(() => {
+  const pythonOk = runtime.value?.pythonOk ?? runtime.value?.python_ok
+  const tectonicBundled = runtime.value?.tectonicBundled ?? runtime.value?.tectonic_bundled
+  const repoRoot = runtime.value?.repoRoot ?? runtime.value?.repo_root ?? '-'
+  return [
+    pythonOk ? 'Python 渲染后端已就绪' : '未找到可用的 Python 渲染后端',
+    tectonicBundled ? '已检测到内置 Tectonic' : '未检测到内置 Tectonic，将按规则回退',
+    `项目目录：${repoRoot}`,
+    rendererStatus.value,
+  ]
+})
+const specificImageOptions = computed(() => {
   if (!settings.background_group) return backgroundLibrary.value.images
   return backgroundLibrary.value.images.filter((image) => image.groupName === settings.background_group)
 })
 
+function normalizeOption(item) {
+  if (typeof item === 'string') {
+    return { key: item, label: item, width: undefined, height: undefined }
+  }
+  if (!item || typeof item !== 'object') {
+    return { key: '', label: '' }
+  }
+  return {
+    key: item.key ?? item.id ?? item.value ?? '',
+    label: item.label ?? item.name ?? item.title ?? item.key ?? item.id ?? '',
+    width: item.width,
+    height: item.height,
+  }
+}
+
+function normalizeOptions(items) {
+  return Array.isArray(items)
+    ? items
+        .map(normalizeOption)
+        .map((item) => ({
+          ...item,
+          label: normalizeOptionLabel(item.key, item.label),
+        }))
+        .filter((item) => item.key)
+    : []
+}
+
+function normalizeOptionLabel(key, fallbackLabel) {
+  const labelMap = {
+    auto: '自动（推荐）',
+    tectonic: 'Tectonic LaTeX',
+    matplotlib: 'Matplotlib MathText',
+    custom: '自定义',
+    microsoft_yahei: 'Microsoft YaHei',
+    simhei: 'SimHei',
+    simsun: 'SimSun',
+    dejavusans: 'DejaVu Sans',
+    stixsans: 'STIX Sans',
+    dejavuserif: 'DejaVu Serif',
+    stix: 'STIX',
+    cm: 'Computer Modern',
+  }
+  return labelMap[key] ?? fallbackLabel ?? key
+}
+
+function normalizeLibrary(library) {
+  const groups = Array.isArray(library?.groups) ? library.groups.map((group) => String(group)) : []
+  const images = Array.isArray(library?.images)
+    ? library.images
+        .map((image) => ({
+          id: image?.id ?? '',
+          groupName: image?.groupName ?? image?.group_name ?? '',
+          name: image?.name ?? image?.id ?? '',
+          path: image?.path ?? '',
+        }))
+        .filter((image) => image.id)
+    : []
+  return { groups, images }
+}
+
 function appendLog(message) {
-  outputLog.value = `${outputLog.value}${outputLog.value ? '\\n' : ''}${message}`
+  outputLog.value = `${outputLog.value}${outputLog.value ? '\n' : ''}${message}`
 }
 
 function applySettings(nextSettings = {}) {
@@ -50,34 +127,47 @@ function applySettings(nextSettings = {}) {
 }
 
 function setLibrary(library) {
-  backgroundLibrary.value = library ?? { groups: [], images: [] }
-  const groups = backgroundLibrary.value.groups ?? []
-  const images = backgroundLibrary.value.images ?? []
+  backgroundLibrary.value = normalizeLibrary(library)
+  const groups = backgroundLibrary.value.groups
+  const images = backgroundLibrary.value.images
 
-  if (groups.length && !groups.includes(settings.background_group)) {
+  if (groups.length > 0 && !groups.includes(settings.background_group)) {
     settings.background_group = groups[0]
   }
-  if (!groups.length) settings.background_group = ''
-
-  const imageIds = images.map((item) => item.id)
-  if (imageIds.length && !imageIds.includes(settings.background_image_id)) {
-    settings.background_image_id = imageIds[0]
+  if (groups.length === 0) {
+    settings.background_group = ''
   }
-  if (!imageIds.length) settings.background_image_id = ''
+
+  const visibleImageIds = specificImageOptions.value.map((image) => image.id)
+  if (visibleImageIds.length > 0 && !visibleImageIds.includes(settings.background_image_id)) {
+    settings.background_image_id = visibleImageIds[0]
+  }
+  if (visibleImageIds.length === 0) {
+    const allImageIds = images.map((image) => image.id)
+    settings.background_image_id = allImageIds[0] ?? ''
+  }
 }
 
 function ensureOptionSelections() {
   const deviceKeys = devices.value.map((item) => item.key)
-  if (deviceKeys.length && !deviceKeys.includes(settings.device_model)) settings.device_model = deviceKeys[0]
+  if (deviceKeys.length > 0 && !deviceKeys.includes(settings.device_model)) {
+    settings.device_model = deviceKeys[0]
+  }
 
   const rendererKeys = formulaRenderers.value.map((item) => item.key)
-  if (rendererKeys.length && !rendererKeys.includes(settings.formula_renderer)) settings.formula_renderer = rendererKeys[0]
+  if (rendererKeys.length > 0 && !rendererKeys.includes(settings.formula_renderer)) {
+    settings.formula_renderer = rendererKeys[0]
+  }
 
   const textFontKeys = textFonts.value.map((item) => item.key)
-  if (textFontKeys.length && !textFontKeys.includes(settings.text_font_family)) settings.text_font_family = textFontKeys[0]
+  if (textFontKeys.length > 0 && !textFontKeys.includes(settings.text_font_family)) {
+    settings.text_font_family = textFontKeys[0]
+  }
 
   const mathFontKeys = mathFonts.value.map((item) => item.key)
-  if (mathFontKeys.length && !mathFontKeys.includes(settings.math_font_family)) settings.math_font_family = mathFontKeys[0]
+  if (mathFontKeys.length > 0 && !mathFontKeys.includes(settings.math_font_family)) {
+    settings.math_font_family = mathFontKeys[0]
+  }
 }
 
 function syncDeviceDimensions() {
@@ -92,16 +182,20 @@ async function bootstrap() {
   booting.value = true
   try {
     const data = await invoke('bootstrap_app_state')
-    applySettings(data.settings)
-    devices.value = data.devices
-    textFonts.value = data.textFonts
-    mathFonts.value = data.mathFonts
-    formulaRenderers.value = data.formulaRenderers
-    runtime.value = data.runtime
-    setLibrary(data.backgroundLibrary)
+    applySettings(data?.settings ?? {})
+    devices.value = normalizeOptions(data?.devices ?? data?.deviceProfiles)
+    textFonts.value = normalizeOptions(data?.textFonts ?? data?.text_fonts)
+    mathFonts.value = normalizeOptions(data?.mathFonts ?? data?.math_fonts)
+    formulaRenderers.value = normalizeOptions(data?.formulaRenderers ?? data?.formula_renderers)
+    runtime.value = data?.runtime ?? null
+    setLibrary(data?.backgroundLibrary ?? data?.background_library)
     ensureOptionSelections()
     syncDeviceDimensions()
-    outputLog.value = '桌面端已就绪，当前使用本地 Markdown 目录。'
+    outputLog.value = '桌面端已就绪，当前仅支持本地 Markdown 目录工作流。'
+  } catch (error) {
+    const message = error?.message ?? String(error)
+    outputLog.value = `启动失败：${message}`
+    throw error
   } finally {
     booting.value = false
   }
@@ -109,8 +203,8 @@ async function bootstrap() {
 
 async function persistSettingsNow() {
   const data = await invoke('save_app_settings', { settings: { ...settings } })
-  applySettings(data.settings)
-  runtime.value = data.runtime
+  applySettings(data?.settings ?? {})
+  runtime.value = data?.runtime ?? runtime.value
 }
 
 watch(
@@ -120,7 +214,7 @@ watch(
     clearTimeout(persistTimer.value)
     persistTimer.value = setTimeout(() => {
       persistSettingsNow().catch((error) => {
-        appendLog(`保存设置失败：${error.message}`)
+        appendLog(`保存设置失败：${error?.message ?? error}`)
       })
     }, 250)
   },
@@ -132,9 +226,24 @@ watch(
   () => syncDeviceDimensions(),
 )
 
+watch(
+  () => settings.background_group,
+  () => {
+    const visibleImageIds = specificImageOptions.value.map((image) => image.id)
+    if (visibleImageIds.length > 0 && !visibleImageIds.includes(settings.background_image_id)) {
+      settings.background_image_id = visibleImageIds[0]
+    }
+    if (visibleImageIds.length === 0 && settings.background_mode === 'specific') {
+      settings.background_image_id = ''
+    }
+  },
+)
+
 async function pickDirectory(fieldName) {
   const selected = await open({ directory: true, multiple: false })
-  if (typeof selected === 'string') settings[fieldName] = selected
+  if (typeof selected === 'string') {
+    settings[fieldName] = selected
+  }
 }
 
 async function importImages() {
@@ -147,6 +256,7 @@ async function importImages() {
     filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp'] }],
   })
   if (!selected || !Array.isArray(selected) || selected.length === 0) return
+
   try {
     const library = await invoke('import_background_images', {
       payload: { groupName: settings.background_group, paths: selected },
@@ -154,7 +264,7 @@ async function importImages() {
     setLibrary(library)
     appendLog(`已导入 ${selected.length} 张背景图到分组 ${settings.background_group}。`)
   } catch (error) {
-    appendLog(error.message)
+    appendLog(error?.message ?? String(error))
   }
 }
 
@@ -168,7 +278,7 @@ async function previewRustScan() {
     rustScanSummary.value = summary
     appendLog(`Rust 预扫描完成：发现 ${summary.markdownFileCount} 个 Markdown 文件，识别 ${summary.itemCount} 个条目。`)
   } catch (error) {
-    appendLog(error.message)
+    appendLog(error?.message ?? String(error))
   }
 }
 
@@ -177,20 +287,24 @@ async function runGenerator() {
   outputLog.value = ''
   try {
     const data = await invoke('run_generation_pipeline', { settings: { ...settings } })
-    runtime.value = data.runtime
-    setLibrary(data.backgroundLibrary)
-    const summary = data.summary
-    appendLog(`来源：${summary.source_description}`)
-    appendLog(`扫描 Markdown 文件：${summary.markdown_file_count}`)
-    appendLog(`识别条目：${summary.item_count}`)
-    appendLog(`输出图片：${summary.image_count}`)
-    appendLog(`新增 ${summary.created_count}，更新 ${summary.updated_count}，未变 ${summary.unchanged_count}，删除 ${summary.deleted_count}`)
-    appendLog(`元数据目录：${summary.data_dir}`)
-    appendLog(`云盘目录：${summary.cloud_dir}`)
-    appendLog(`索引文件：${summary.index_path}`)
+    runtime.value = data?.runtime ?? runtime.value
+    setLibrary(data?.backgroundLibrary ?? data?.background_library)
+    const summary = data?.summary ?? {}
+    appendLog(`来源：${summary.source_description ?? summary.sourceDescription ?? '-'}`)
+    appendLog(`扫描 Markdown 文件：${summary.markdown_file_count ?? summary.markdownFileCount ?? 0}`)
+    appendLog(`识别条目：${summary.item_count ?? summary.itemCount ?? 0}`)
+    appendLog(`输出图片：${summary.image_count ?? summary.imageCount ?? 0}`)
+    appendLog(
+      `新增 ${summary.created_count ?? summary.createdCount ?? 0}，更新 ${summary.updated_count ?? summary.updatedCount ?? 0}，未变 ${
+        summary.unchanged_count ?? summary.unchangedCount ?? 0
+      }，删除 ${summary.deleted_count ?? summary.deletedCount ?? 0}`,
+    )
+    appendLog(`元数据目录：${summary.data_dir ?? summary.dataDir ?? '-'}`)
+    appendLog(`云盘目录：${summary.cloud_dir ?? summary.cloudDir ?? '-'}`)
+    appendLog(`索引文件：${summary.index_path ?? summary.indexPath ?? '-'}`)
     runState.value = 'success'
   } catch (error) {
-    appendLog(error.message)
+    appendLog(error?.message ?? String(error))
     runState.value = 'error'
   }
 }
@@ -199,9 +313,11 @@ async function clearGenerated() {
   if (!window.confirm('这会清空生成图片与元数据，是否继续？')) return
   try {
     const summary = await invoke('clear_generated_outputs_in_rust', { settings: { ...settings } })
-    appendLog(`已清空：元数据 ${summary.removedMetadataCount} 项，图片 ${summary.removedCloudCount} 张，索引 ${summary.removedIndexCount} 个。`)
+    appendLog(
+      `已清空：元数据 ${summary.removedMetadataCount} 项，图片 ${summary.removedCloudCount} 张，索引 ${summary.removedIndexCount} 个。`,
+    )
   } catch (error) {
-    appendLog(error.message)
+    appendLog(error?.message ?? String(error))
   }
 }
 
@@ -212,7 +328,7 @@ async function clearLibrary() {
     setLibrary(library)
     appendLog('背景图库已清空。')
   } catch (error) {
-    appendLog(error.message)
+    appendLog(error?.message ?? String(error))
   }
 }
 
@@ -222,10 +338,10 @@ async function addGroup() {
   try {
     const library = await invoke('create_background_group', { payload: { name } })
     setLibrary(library)
-    settings.background_group = name.replace(/[\/]/g, '_')
+    settings.background_group = name.replace(/[\\/]/g, '_')
     appendLog(`已创建分组：${settings.background_group}`)
   } catch (error) {
-    appendLog(error.message)
+    appendLog(error?.message ?? String(error))
   }
 }
 
@@ -238,7 +354,7 @@ async function deleteGroup() {
     setLibrary(library)
     appendLog(`已删除分组：${target}`)
   } catch (error) {
-    appendLog(error.message)
+    appendLog(error?.message ?? String(error))
   }
 }
 
@@ -251,15 +367,12 @@ async function deleteImage() {
     setLibrary(library)
     appendLog(`已删除背景图：${target}`)
   } catch (error) {
-    appendLog(error.message)
+    appendLog(error?.message ?? String(error))
   }
 }
 
 onMounted(() => {
-  bootstrap().catch((error) => {
-    outputLog.value = error.message
-    booting.value = false
-  })
+  bootstrap().catch(() => {})
 })
 </script>
 
@@ -269,13 +382,11 @@ onMounted(() => {
       <div>
         <p class="eyebrow">DailyTipsApp Desktop</p>
         <h1>公式壁纸生成器</h1>
-        <p class="hero-copy">仅保留本地 Markdown 工作流：扫描笔记、生成图片、同步到云盘目录。</p>
+        <p class="hero-copy">扫描本地 Markdown 笔记，提取知识点，生成锁屏公式壁纸，并同步到云盘目录。</p>
       </div>
       <div class="status-card">
         <p class="status-title">运行状态</p>
-        <p>{{ runtime?.pythonSummary ?? '正在检测 Python...' }}</p>
-        <p>{{ runtime?.tectonicSummary ?? '正在检测 Tectonic...' }}</p>
-        <p>{{ rendererStatus }}</p>
+        <p v-for="line in runtimeSummary" :key="line">{{ line }}</p>
       </div>
     </div>
 
@@ -284,7 +395,7 @@ onMounted(() => {
         <div class="section-head">
           <div>
             <h2>生成配置</h2>
-            <p class="section-copy">当前桌面端默认使用 Rust 编排本地扫描，再交给 Python 渲染图片。</p>
+            <p class="section-copy">当前桌面端使用 Rust 负责扫描和增量判断，再调用渲染后端生成图片。</p>
           </div>
           <span :class="['pill', runState]">{{ runState }}</span>
         </div>
@@ -293,13 +404,17 @@ onMounted(() => {
           <label class="field">
             <span>iPhone 型号</span>
             <select v-model="settings.device_model">
-              <option v-for="device in devices" :key="device.key" :value="device.key">{{ device.label }}</option>
+              <option v-for="device in devices" :key="device.key" :value="device.key">
+                {{ device.label || device.key }}
+              </option>
             </select>
           </label>
           <label class="field">
-            <span>公式引擎</span>
+            <span>公式渲染引擎</span>
             <select v-model="settings.formula_renderer">
-              <option v-for="renderer in formulaRenderers" :key="renderer.key" :value="renderer.key">{{ renderer.label }}</option>
+              <option v-for="renderer in formulaRenderers" :key="renderer.key" :value="renderer.key">
+                {{ renderer.label || renderer.key }}
+              </option>
             </select>
           </label>
         </div>
@@ -351,7 +466,9 @@ onMounted(() => {
             <span>背景分组</span>
             <select v-model="settings.background_group">
               <option value="">未选择</option>
-              <option v-for="group in backgroundLibrary.groups" :key="group" :value="group">{{ group }}</option>
+              <option v-for="group in backgroundLibrary.groups" :key="group" :value="group">
+                {{ group }}
+              </option>
             </select>
           </label>
         </div>
@@ -361,13 +478,17 @@ onMounted(() => {
             <span>指定背景图</span>
             <select v-model="settings.background_image_id">
               <option value="">未选择</option>
-              <option v-for="image in backgroundLibrary.images" :key="image.id" :value="image.id">{{ image.id }}</option>
+              <option v-for="image in specificImageOptions" :key="image.id" :value="image.id">
+                {{ image.id }}
+              </option>
             </select>
           </label>
           <label class="field">
             <span>正文字体</span>
             <select v-model="settings.text_font_family">
-              <option v-for="font in textFonts" :key="font.key" :value="font.key">{{ font.label }}</option>
+              <option v-for="font in textFonts" :key="font.key" :value="font.key">
+                {{ font.label || font.key }}
+              </option>
             </select>
           </label>
         </div>
@@ -376,11 +497,13 @@ onMounted(() => {
           <label class="field">
             <span>公式字体</span>
             <select v-model="settings.math_font_family">
-              <option v-for="font in mathFonts" :key="font.key" :value="font.key">{{ font.label }}</option>
+              <option v-for="font in mathFonts" :key="font.key" :value="font.key">
+                {{ font.label || font.key }}
+              </option>
             </select>
           </label>
           <label class="field">
-            <span>正文颜色</span>
+            <span>正文字色</span>
             <input v-model="settings.text_color" type="color" />
           </label>
         </div>
@@ -398,7 +521,7 @@ onMounted(() => {
 
         <label class="field">
           <span>卡片透明度</span>
-          <input v-model="settings.panel_opacity" max="255" min="0" type="range" />
+          <input v-model="settings.panel_opacity" type="range" min="0" max="255" />
           <small>{{ settings.panel_opacity }}</small>
         </label>
 
@@ -415,7 +538,9 @@ onMounted(() => {
           <p>Markdown 文件：{{ rustScanSummary.markdownFileCount }}</p>
           <p>识别条目：{{ rustScanSummary.itemCount }}</p>
           <p v-if="rustScanSummary.items?.length">首条标题：{{ rustScanSummary.items[0].title }}</p>
-          <p v-if="rustScanSummary.items?.length">来源：{{ rustScanSummary.items[0].sourcePath }}:{{ rustScanSummary.items[0].sourceLine }}</p>
+          <p v-if="rustScanSummary.items?.length">
+            来源：{{ rustScanSummary.items[0].sourcePath }}:{{ rustScanSummary.items[0].sourceLine }}
+          </p>
         </div>
 
         <label class="field">
@@ -428,7 +553,7 @@ onMounted(() => {
         <div class="section-head">
           <div>
             <h2>背景图库</h2>
-            <p class="section-copy">支持分组管理、导入背景图，以及按规则参与渲染。</p>
+            <p class="section-copy">支持分组管理、导入背景图，并按规则参与渲染。</p>
           </div>
           <button class="ghost small" type="button" @click="importImages">导入图片</button>
         </div>
@@ -446,8 +571,8 @@ onMounted(() => {
               <button
                 v-for="group in backgroundLibrary.groups"
                 :key="group"
-                :class="['list-item', { active: group === settings.background_group }]"
                 type="button"
+                :class="['list-item', { active: group === settings.background_group }]"
                 @click="settings.background_group = group"
               >
                 {{ group }}
@@ -465,10 +590,10 @@ onMounted(() => {
             </div>
             <div class="list-box">
               <button
-                v-for="image in selectedGroupImages"
+                v-for="image in specificImageOptions"
                 :key="image.id"
-                :class="['list-item', { active: image.id === settings.background_image_id }]"
                 type="button"
+                :class="['list-item', { active: image.id === settings.background_image_id }]"
                 @click="settings.background_image_id = image.id"
               >
                 {{ image.id }}
@@ -580,85 +705,82 @@ small {
 .section-head,
 .library-head {
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
 }
 
-.section-head h2,
-.library-head h3,
-.preview-card h3 {
-  margin: 0;
-}
-
-.section-copy,
-.hero-copy,
-.status-card p,
-.preview-card p {
-  margin: 8px 0 0;
-}
-
-.pill {
-  padding: 8px 14px;
-  border-radius: 999px;
-  background: #e7f1ff;
-  color: #3467c9;
-  font-weight: 700;
-  text-transform: capitalize;
-}
-
-.pill.running {
-  background: #fff1cb;
-  color: #a66a00;
-}
-
-.pill.success {
-  background: #e0f6ea;
-  color: #1f7a46;
-}
-
-.pill.error {
-  background: #ffe2e2;
-  color: #bc2f2f;
-}
-
+.library-grid,
 .two-up {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+}
+
+.library-grid > *,
+.two-up > * {
+  flex: 1;
 }
 
 .field {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  font-weight: 600;
-  color: #32506f;
+  font-size: 14px;
+  color: #355372;
 }
 
 .field span {
-  font-size: 14px;
+  font-weight: 600;
 }
 
-.field input,
-.field select,
-.field textarea,
+.inline-toggle {
+  justify-content: center;
+}
+
+input,
+select,
+textarea,
 button {
   font: inherit;
 }
 
-.field input,
-.field select,
-.field textarea {
+input,
+select,
+textarea {
   width: 100%;
-  border: 1px solid #b8d5e4;
-  border-radius: 18px;
-  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(111, 166, 194, 0.4);
   background: rgba(255, 255, 255, 0.96);
-  color: #183754;
+  padding: 14px 16px;
+  color: #173251;
   outline: none;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
-.field textarea {
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: #50adc9;
+  box-shadow: 0 0 0 4px rgba(80, 173, 201, 0.14);
+}
+
+input[type='checkbox'] {
+  width: auto;
+  transform: scale(1.15);
+  accent-color: #3f90ff;
+}
+
+input[type='color'] {
+  min-height: 52px;
+  padding: 8px;
+}
+
+input[type='range'] {
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+textarea {
   resize: vertical;
-  min-height: 220px;
 }
 
 .input-action {
@@ -669,96 +791,144 @@ button {
   flex: 1;
 }
 
-.inline-toggle {
-  justify-content: flex-end;
-}
-
-.inline-toggle input {
-  width: 22px;
-  height: 22px;
-}
-
 button {
-  border: 0;
+  border: none;
   border-radius: 16px;
-  padding: 12px 18px;
+  padding: 14px 18px;
   cursor: pointer;
-  transition: transform 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease;
+  font-weight: 700;
+  transition: transform 0.14s ease, box-shadow 0.14s ease, opacity 0.14s ease;
 }
 
-button:hover {
+button:hover:not(:disabled) {
   transform: translateY(-1px);
 }
 
 button:disabled {
-  opacity: 0.55;
+  opacity: 0.56;
   cursor: not-allowed;
-  transform: none;
 }
 
-button.primary {
-  background: linear-gradient(135deg, #2f6af5, #3ca2ff);
-  color: white;
-  box-shadow: 0 12px 24px rgba(49, 110, 246, 0.26);
+.primary {
+  background: linear-gradient(135deg, #3074ff 0%, #1c5cff 100%);
+  color: #ffffff;
+  box-shadow: 0 12px 28px rgba(48, 116, 255, 0.24);
 }
 
-button.ghost {
-  background: rgba(232, 244, 255, 0.96);
-  color: #235487;
+.ghost {
+  background: rgba(255, 255, 255, 0.92);
+  color: #2f557d;
+  border: 1px solid rgba(111, 166, 194, 0.36);
 }
 
-button.danger {
-  background: #f04d4d;
-  color: white;
+.danger {
+  background: #f04e5e;
+  color: #ffffff;
+  box-shadow: 0 12px 28px rgba(240, 78, 94, 0.22);
 }
 
-button.small {
+.small {
   padding: 10px 14px;
   border-radius: 14px;
 }
 
-.preview-card {
-  border-radius: 22px;
-  padding: 18px;
+.pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 88px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
-.library-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+.pill.idle {
+  background: rgba(128, 146, 166, 0.12);
+  color: #5f7691;
+}
+
+.pill.running {
+  background: rgba(53, 138, 255, 0.16);
+  color: #2167dd;
+}
+
+.pill.success {
+  background: rgba(43, 177, 120, 0.16);
+  color: #1b8f5d;
+}
+
+.pill.error {
+  background: rgba(240, 78, 94, 0.14);
+  color: #cc3040;
+}
+
+.preview-card {
+  border-radius: 22px;
+  padding: 16px 18px;
+}
+
+.preview-card h3,
+.library-head h3,
+.section-head h2 {
+  margin: 0 0 6px;
 }
 
 .list-box {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-height: 280px;
   max-height: 420px;
   overflow: auto;
-  padding-right: 4px;
+  padding: 8px;
+  border-radius: 20px;
+  background: rgba(244, 249, 255, 0.9);
+  border: 1px solid rgba(111, 166, 194, 0.2);
 }
 
 .list-item {
-  width: 100%;
   text-align: left;
-  background: rgba(241, 247, 255, 0.95);
-  color: #234260;
+  background: #ffffff;
+  color: #27496f;
+  border: 1px solid transparent;
+  box-shadow: none;
 }
 
 .list-item.active {
-  background: linear-gradient(135deg, #2f6af5, #4cb5ff);
-  color: white;
+  background: linear-gradient(135deg, rgba(60, 123, 255, 0.14), rgba(88, 200, 255, 0.12));
+  border-color: rgba(60, 123, 255, 0.25);
 }
 
-@media (max-width: 1100px) {
-  .hero,
-  .grid,
-  .library-grid,
-  .two-up {
+@media (max-width: 1200px) {
+  .grid {
     grid-template-columns: 1fr;
-    display: grid;
+  }
+
+  .hero {
+    flex-direction: column;
   }
 
   .status-card {
     min-width: 0;
+  }
+}
+
+@media (max-width: 820px) {
+  .shell {
+    padding: 18px;
+  }
+
+  h1 {
+    font-size: 32px;
+  }
+
+  .two-up,
+  .library-grid,
+  .section-head {
+    flex-direction: column;
   }
 }
 </style>
