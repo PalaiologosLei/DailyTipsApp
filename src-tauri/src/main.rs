@@ -1396,12 +1396,12 @@ fn resolve_repo_root() -> Result<PathBuf, String> {
         }
     }
 
-    Err("Unable to locate repository root containing src/main.py".to_string())
+    Err("Unable to locate repository root containing src/desktop_api.py".to_string())
 }
 
 fn find_repo_root_from(start: &Path) -> Option<PathBuf> {
     for candidate in start.ancestors() {
-        if candidate.join("src").join("main.py").exists() {
+        if candidate.join("src").join("desktop_api.py").exists() {
             return Some(candidate.to_path_buf());
         }
     }

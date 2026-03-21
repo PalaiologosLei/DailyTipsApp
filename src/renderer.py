@@ -14,7 +14,6 @@ from pathlib import Path
 from PIL import Image, ImageColor, ImageDraw, ImageFont
 
 from .background_library import choose_background_path
-from .cloud_sync import update_cloud_image_index
 from .models import KnowledgeItem, PreparedRenderJob, RenderConfig, RenderResult, RenderSummary
 
 DEFAULT_WIDTH = 1179
@@ -35,8 +34,12 @@ RENDERER_VERSION = "7"
 INLINE_MATH_PATTERN = re.compile(r"(\$[^$]+\$)")
 CJK_PATTERN = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+")
 MATH_SAFE_PATTERN = re.compile(r"^[A-Za-z0-9\\{}_^=+\-*/()\[\]|.,:;<>!?%&~'\" ]+$")
+COMPLEX_TECTONIC_PATTERN = re.compile(
+    r"(\\d?frac|\\binom|\\sum|\\prod|\\int|\\oint|\\lim|\\begin\{|\\cases\b|\\matrix\b|\\pmatrix\b|\\bmatrix\b|\\vmatrix\b|\\Vmatrix\b|\\underset|\\overset)"
+)
 MATH_SIZE_MULTIPLIER = 0.96
 TECTONIC_TARGET_HEIGHT_MULTIPLIER = 1.08
+TECTONIC_COMPLEX_TARGET_HEIGHT_MULTIPLIER = 1.42
 MATPLOTLIB_TARGET_HEIGHT_MULTIPLIER = 0.96
 CONTENT_PANEL_BASE_FILL = (255, 255, 255)
 CONTENT_PANEL_ALPHA = 212
@@ -221,7 +224,7 @@ def render_items(items: list[KnowledgeItem], image_dir: Path, metadata_dir: Path
             manifest_path.write_text(json.dumps(new_manifest, ensure_ascii=False, indent=2), encoding="utf-8")
         if force_regenerate or not state_path.exists():
             state_path.write_text(json.dumps(render_state, ensure_ascii=False, indent=2), encoding="utf-8")
-        update_cloud_image_index(image_dir)
+        _write_image_index(image_dir, image_index_payload)
 
     return summary
 
@@ -638,6 +641,7 @@ def _render_math_with_tectonic(
     if formula_backend.tectonic_path is None or not PYMUPDF_AVAILABLE or fitz is None:
         return None
 
+    complex_formula = _is_complex_tectonic_formula(formula_segment)
     latex_expression = _to_latex_math(formula_segment)
     if not latex_expression.strip():
         return None
@@ -657,14 +661,26 @@ def _render_math_with_tectonic(
                 return None
             document_pdf = fitz.open(pdf_path)
             page = document_pdf[0]
-            scale = max(1.0, font_size / 20)
+            scale = max(1.0, font_size / (16 if complex_formula else 20))
             pixmap = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=True)
             image = Image.frombytes("RGBA", (pixmap.width, pixmap.height), pixmap.samples)
             document_pdf.close()
     except Exception:
         return None
 
-    return _finalize_formula_image(image, font_size, max_width, TECTONIC_TARGET_HEIGHT_MULTIPLIER)
+    target_multiplier = (
+        TECTONIC_COMPLEX_TARGET_HEIGHT_MULTIPLIER if complex_formula else TECTONIC_TARGET_HEIGHT_MULTIPLIER
+    )
+    return _finalize_formula_image(image, font_size, max_width, target_multiplier)
+
+
+def _is_complex_tectonic_formula(formula_segment: str) -> bool:
+    stripped = formula_segment.strip()
+    if not stripped:
+        return False
+    if COMPLEX_TECTONIC_PATTERN.search(stripped):
+        return True
+    return stripped.count("^") + stripped.count("_") >= 3
 
 
 def _finalize_formula_image(image: Image.Image, font_size: int, max_width: int, target_height_multiplier: float) -> Image.Image | None:
@@ -792,6 +808,11 @@ def _load_manifest(manifest_path: Path) -> dict[str, object]:
         return json.loads(manifest_path.read_text(encoding="utf-8"))
     except Exception:
         return {"version": RENDERER_VERSION, "items": {}}
+
+
+def _write_image_index(image_dir: Path, payload: dict[str, object]) -> None:
+    image_dir.mkdir(parents=True, exist_ok=True)
+    (image_dir / "images_index.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _load_font(size: int, family_key: str) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
