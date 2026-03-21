@@ -1382,26 +1382,30 @@ fn find_python_command() -> Option<(PathBuf, Vec<String>)> {
 }
 
 fn resolve_repo_root() -> Result<PathBuf, String> {
-    let current = std::env::current_dir().map_err(|error| error.to_string())?;
-    if current.join("src").join("main.py").exists() {
-        return Ok(current);
+    if let Ok(current) = std::env::current_dir() {
+        if let Some(found) = find_repo_root_from(&current) {
+            return Ok(found);
+        }
     }
 
-    let exe_dir = std::env::current_exe()
-        .map_err(|error| error.to_string())?
-        .parent()
-        .map(Path::to_path_buf)
-        .ok_or_else(|| "Unable to resolve executable directory".to_string())?;
-    if exe_dir.join("src").join("main.py").exists() {
-        return Ok(exe_dir);
-    }
-    if let Some(parent) = exe_dir.parent() {
-        if parent.join("src").join("main.py").exists() {
-            return Ok(parent.to_path_buf());
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            if let Some(found) = find_repo_root_from(exe_dir) {
+                return Ok(found);
+            }
         }
     }
 
     Err("Unable to locate repository root containing src/main.py".to_string())
+}
+
+fn find_repo_root_from(start: &Path) -> Option<PathBuf> {
+    for candidate in start.ancestors() {
+        if candidate.join("src").join("main.py").exists() {
+            return Some(candidate.to_path_buf());
+        }
+    }
+    None
 }
 
 fn main() {
