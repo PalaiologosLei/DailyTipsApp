@@ -185,6 +185,22 @@ struct PipelineSummary {
     background_library: BackgroundLibraryState,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InstallSelfCheck {
+    repo_root: String,
+    resource_root: Option<String>,
+    desktop_api_path: String,
+    desktop_api_exists: bool,
+    bundled_python_path: Option<String>,
+    bundled_python_exists: bool,
+    selected_python_command: Option<String>,
+    tectonic_path: Option<String>,
+    tectonic_exists: bool,
+    default_background_path: String,
+    default_background_exists: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ManifestEntry {
     file: String,
@@ -551,6 +567,43 @@ fn run_python_api(app: tauri::AppHandle, request: RunPayload) -> Result<ApiRespo
     let repo_root = resolve_repo_root(Some(&app))?;
     let resource_root = resource_root_for_app(Some(&app));
     execute_python_api(&repo_root, resource_root.as_deref(), &request.command, request.payload)
+}
+
+#[tauri::command]
+fn installation_self_check(app: tauri::AppHandle) -> Result<InstallSelfCheck, String> {
+    let resource_root = resource_root_for_app(Some(&app));
+    let repo_root = resolve_repo_root(Some(&app))?;
+    let desktop_api_path = repo_root.join("src").join("desktop_api.py");
+    let bundled_python_root = python_runtime_root(&repo_root, resource_root.as_deref());
+    let bundled_python_path = bundled_python_root
+        .as_ref()
+        .map(|root| root.join("python.exe"))
+        .filter(|path| path.exists());
+    let selected_python_command = find_python_command(&repo_root, resource_root.as_deref()).map(|(program, prefix)| {
+        let mut parts = vec![program.display().to_string()];
+        parts.extend(prefix);
+        parts.join(" ")
+    });
+    let tectonic_path = resolve_tectonic_executable(&repo_root, resource_root.as_deref());
+    let default_background_path = repo_root
+        .join("assets")
+        .join("backgrounds")
+        .join("default")
+        .join("CBD.jpg");
+
+    Ok(InstallSelfCheck {
+        repo_root: repo_root.display().to_string(),
+        resource_root: resource_root.map(|path| path.display().to_string()),
+        desktop_api_path: desktop_api_path.display().to_string(),
+        desktop_api_exists: desktop_api_path.exists(),
+        bundled_python_path: bundled_python_path.as_ref().map(|path| path.display().to_string()),
+        bundled_python_exists: bundled_python_path.is_some(),
+        selected_python_command,
+        tectonic_path: tectonic_path.as_ref().map(|path| path.display().to_string()),
+        tectonic_exists: tectonic_path.is_some(),
+        default_background_path: default_background_path.display().to_string(),
+        default_background_exists: default_background_path.exists(),
+    })
 }
 
 fn runtime_status_for_renderer(repo_root: &Path, resource_root: Option<&Path>, requested: &str) -> RuntimeStatus {
@@ -1509,7 +1562,8 @@ fn main() {
             inspect_render_metadata_in_rust,
             scan_local_markdown,
             run_generation_pipeline,
-            run_python_api
+            run_python_api,
+            installation_self_check
         ])
         .run(tauri::generate_context!())
         .expect("failed to run DailyTipsApp desktop shell");

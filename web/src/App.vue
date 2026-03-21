@@ -333,6 +333,38 @@ async function runGenerator() {
   }
 }
 
+async function runInstallSelfCheck() {
+  try {
+    const result = await tauriInvoke('installation_self_check')
+    appendLog('安装版自检结果：')
+    appendLog(`仓库/资源根目录：${result.repoRoot ?? result.repo_root ?? '-'}`)
+    appendLog(`Tauri 资源目录：${result.resourceRoot ?? result.resource_root ?? '-'}`)
+    appendLog(
+      `desktop_api.py：${result.desktopApiPath ?? result.desktop_api_path ?? '-'} | ${
+        (result.desktopApiExists ?? result.desktop_api_exists) ? '存在' : '缺失'
+      }`,
+    )
+    appendLog(
+      `内置 Python：${result.bundledPythonPath ?? result.bundled_python_path ?? '-'} | ${
+        (result.bundledPythonExists ?? result.bundled_python_exists) ? '存在' : '缺失'
+      }`,
+    )
+    appendLog(`当前选中 Python：${result.selectedPythonCommand ?? result.selected_python_command ?? '-'}`)
+    appendLog(
+      `Tectonic：${result.tectonicPath ?? result.tectonic_path ?? '-'} | ${
+        (result.tectonicExists ?? result.tectonic_exists) ? '存在' : '缺失'
+      }`,
+    )
+    appendLog(
+      `默认背景图：${result.defaultBackgroundPath ?? result.default_background_path ?? '-'} | ${
+        (result.defaultBackgroundExists ?? result.default_background_exists) ? '存在' : '缺失'
+      }`,
+    )
+  } catch (error) {
+    appendLog(`安装版自检失败：${error?.message ?? error}`)
+  }
+}
+
 async function clearGenerated() {
   if (!window.confirm('这会清空生成图片与元数据，是否继续？')) return
   try {
@@ -550,6 +582,7 @@ onMounted(() => {
         </label>
 
         <div class="actions">
+          <button class="ghost" type="button" @click="runInstallSelfCheck" :disabled="isRunning || booting">安装版自检</button>
           <button class="ghost" type="button" @click="previewRustScan" :disabled="isRunning">Rust 预扫描</button>
           <button class="danger" type="button" @click="clearGenerated" :disabled="isRunning">清空生成结果</button>
           <button class="primary" type="button" @click="runGenerator" :disabled="isRunning || booting">
