@@ -16,12 +16,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Minimal Python render bridge for the Tauri desktop app.")
     parser.add_argument("command", choices=["render-prepared"])
     parser.add_argument("--payload", default="{}", help="JSON payload for the selected command.")
+    parser.add_argument("--payload-file", default="", help="Path to a UTF-8 JSON payload file for the selected command.")
     return parser
 
 
 def main() -> int:
     args = build_parser().parse_args()
-    payload = _parse_payload(args.payload)
+    payload = _load_payload(args.payload_file, args.payload)
     repo_dir = Path(__file__).resolve().parent.parent
 
     try:
@@ -101,6 +102,17 @@ def _parse_payload(raw: str) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError("Payload must be a JSON object.")
     return payload
+
+
+def _load_payload(payload_file: str, inline_payload: str) -> dict[str, Any]:
+    raw_path = str(payload_file or "").strip()
+    if raw_path:
+        path = Path(raw_path).expanduser()
+        try:
+            return _parse_payload(path.read_text(encoding="utf-8"))
+        except OSError as error:
+            raise ValueError(f"Unable to read payload file: {error}") from error
+    return _parse_payload(inline_payload)
 
 
 if __name__ == "__main__":

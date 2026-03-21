@@ -7,6 +7,7 @@ use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 const SETTINGS_FILE_NAME: &str = ".gui_settings.json";
 const BACKGROUND_LIBRARY_RELATIVE_DIR: &str = "assets/backgrounds";
@@ -1268,14 +1269,18 @@ fn execute_python_api(
         }
     }
 
+    let payload_string = payload.to_string();
+    let payload_file = write_payload_file(&payload_string)?;
+
     command
         .arg("-m")
         .arg("src.desktop_api")
         .arg(command_name)
-        .arg("--payload")
-        .arg(payload.to_string());
+        .arg("--payload-file")
+        .arg(&payload_file);
 
     let output = command.output().map_err(|error| error.to_string())?;
+    let _ = fs::remove_file(&payload_file);
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
     let data = if output.status.success() {
@@ -1291,6 +1296,17 @@ fn execute_python_api(
         stderr,
         data,
     })
+}
+
+fn write_payload_file(payload: &str) -> Result<PathBuf, String> {
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| error.to_string())?
+        .as_nanos();
+    let digest = format!("{:x}", Sha256::digest(format!("{}:{}:{}", std::process::id(), timestamp, payload.len()).as_bytes()));
+    let path = std::env::temp_dir().join(format!("dailytipsapp_payload_{}.json", &digest[..16]));
+    fs::write(&path, payload).map_err(|error| error.to_string())?;
+    Ok(path)
 }
 
 trait IfEmptyThen {
