@@ -41,15 +41,15 @@ class PythonRendererBackend(RenderBackend):
 def build_prepared_requests(raw_items: list[dict[str, object]], output_root: Path) -> list[PreparedRenderRequest]:
     requests: list[PreparedRenderRequest] = []
     for raw_item in raw_items:
-        output_file = str(raw_item.get("output_file", "")).strip()
+        output_file = str(raw_item.get("output_file") or raw_item.get("outputFile") or "").strip()
         if not output_file:
             raise RenderBackendError("Prepared render item is missing output_file.")
         item = KnowledgeItem(
             title=str(raw_item.get("title", "")).strip(),
             body=str(raw_item.get("body", "")).strip(),
             notes=[str(note).strip() for note in raw_item.get("notes", []) if str(note).strip()],
-            source_path=Path(str(raw_item.get("source_path", ""))),
-            source_line=int(raw_item.get("source_line", 0) or 0),
+            source_path=Path(str(raw_item.get("source_path") or raw_item.get("sourcePath") or "")),
+            source_line=int(raw_item.get("source_line") or raw_item.get("sourceLine") or 0),
         )
         requests.append(PreparedRenderRequest(item=item, output_path=output_root / output_file))
     return requests
