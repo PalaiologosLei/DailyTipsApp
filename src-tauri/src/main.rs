@@ -1491,6 +1491,17 @@ fn resolve_repo_root(app: Option<&tauri::AppHandle>) -> Result<PathBuf, String> 
 
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(exe_dir) = exe_path.parent() {
+            let sibling_resource_candidates = [
+                exe_dir.join("resources"),
+                exe_dir.join("Resources"),
+                exe_dir.join("_up_").join("resources"),
+                exe_dir.join("_up_").join("Resources"),
+            ];
+            for candidate in sibling_resource_candidates {
+                if candidate.join("src").join("desktop_api.py").exists() {
+                    return Ok(candidate);
+                }
+            }
             if let Some(found) = find_repo_root_from(exe_dir) {
                 return Ok(found);
             }
