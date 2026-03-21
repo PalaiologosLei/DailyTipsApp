@@ -21,6 +21,15 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all"
+    "targets": [
+      "nsis",
+      "msi"
+    ],
+    "resources": [
+      "resources/src",
+      "resources/assets",
+      "resources/vendor",
+      "resources/python-runtime"
+    ]
   }
 }

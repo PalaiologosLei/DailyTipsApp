@@ -6,6 +6,10 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 1420",
     "build": "vite build",
+    "prepare:release-resources": "powershell -ExecutionPolicy Bypass -File scripts/prepare_release_resources.ps1",
+    "build:windows": "npm run prepare:release-resources && npm run tauri build",
+    "build:windows:nsis": "npm run prepare:release-resources && npx tauri build --bundles nsis",
+    "build:windows:msi": "npm run prepare:release-resources && npx tauri build --bundles msi",
     "tauri": "tauri"
   },
   "dependencies": {

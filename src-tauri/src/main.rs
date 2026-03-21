@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
+use tauri::Manager;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
 use std::fs;
@@ -213,14 +214,15 @@ struct RenderPlan {
 }
 
 #[tauri::command]
-fn get_runtime_status() -> Result<RuntimeStatus, String> {
-    let repo_root = resolve_repo_root()?;
-    Ok(runtime_status_for_renderer(&repo_root, "auto"))
+fn get_runtime_status(app: tauri::AppHandle) -> Result<RuntimeStatus, String> {
+    let repo_root = resolve_repo_root(Some(&app))?;
+    Ok(runtime_status_for_renderer(&repo_root, resource_root_for_app(Some(&app)).as_deref(), "auto"))
 }
 
 #[tauri::command]
-fn bootstrap_app_state() -> Result<BootstrapState, String> {
-    let repo_root = resolve_repo_root()?;
+fn bootstrap_app_state(app: tauri::AppHandle) -> Result<BootstrapState, String> {
+    let repo_root = resolve_repo_root(Some(&app))?;
+    let resource_root = resource_root_for_app(Some(&app));
     ensure_library_root(&background_library_dir(&repo_root))?;
     let settings = load_gui_settings(&repo_root)?;
     let renderer = settings
@@ -235,13 +237,14 @@ fn bootstrap_app_state() -> Result<BootstrapState, String> {
         math_fonts: math_font_choices(),
         formula_renderers: formula_renderer_choices(),
         background_library: list_background_library(&repo_root)?,
-        runtime: runtime_status_for_renderer(&repo_root, &renderer),
+        runtime: runtime_status_for_renderer(&repo_root, resource_root.as_deref(), &renderer),
     })
 }
 
 #[tauri::command]
-fn save_app_settings(settings: Value) -> Result<SaveSettingsResponse, String> {
-    let repo_root = resolve_repo_root()?;
+fn save_app_settings(app: tauri::AppHandle, settings: Value) -> Result<SaveSettingsResponse, String> {
+    let repo_root = resolve_repo_root(Some(&app))?;
+    let resource_root = resource_root_for_app(Some(&app));
     let stored = save_gui_settings(&repo_root, settings)?;
     let renderer = stored
         .get("formula_renderer")
@@ -250,13 +253,13 @@ fn save_app_settings(settings: Value) -> Result<SaveSettingsResponse, String> {
         .to_string();
     Ok(SaveSettingsResponse {
         settings: stored,
-        runtime: runtime_status_for_renderer(&repo_root, &renderer),
+        runtime: runtime_status_for_renderer(&repo_root, resource_root.as_deref(), &renderer),
     })
 }
 
 #[tauri::command]
-fn create_background_group(payload: NamedPayload) -> Result<BackgroundLibraryState, String> {
-    let repo_root = resolve_repo_root()?;
+fn create_background_group(app: tauri::AppHandle, payload: NamedPayload) -> Result<BackgroundLibraryState, String> {
+    let repo_root = resolve_repo_root(Some(&app))?;
     let group_name = normalize_group_name(&payload.name)?;
     let group_path = background_library_dir(&repo_root).join(group_name);
     fs::create_dir_all(group_path).map_err(|error| error.to_string())?;
@@ -264,8 +267,8 @@ fn create_background_group(payload: NamedPayload) -> Result<BackgroundLibrarySta
 }
 
 #[tauri::command]
-fn delete_background_group(payload: GroupPayload) -> Result<BackgroundLibraryState, String> {
-    let repo_root = resolve_repo_root()?;
+fn delete_background_group(app: tauri::AppHandle, payload: GroupPayload) -> Result<BackgroundLibraryState, String> {
+    let repo_root = resolve_repo_root(Some(&app))?;
     let group_name = normalize_group_name(&payload.group_name)?;
     let group_path = background_library_dir(&repo_root).join(group_name);
     if group_path.exists() {
@@ -276,8 +279,8 @@ fn delete_background_group(payload: GroupPayload) -> Result<BackgroundLibrarySta
 }
 
 #[tauri::command]
-fn delete_background_image(payload: ImagePayload) -> Result<BackgroundLibraryState, String> {
-    let repo_root = resolve_repo_root()?;
+fn delete_background_image(app: tauri::AppHandle, payload: ImagePayload) -> Result<BackgroundLibraryState, String> {
+    let repo_root = resolve_repo_root(Some(&app))?;
     let image_path = resolve_image_id(&background_library_dir(&repo_root), &payload.image_id)?;
     if image_path.exists() {
         fs::remove_file(image_path).map_err(|error| error.to_string())?;
@@ -286,8 +289,8 @@ fn delete_background_image(payload: ImagePayload) -> Result<BackgroundLibrarySta
 }
 
 #[tauri::command]
-fn import_background_images(payload: ImportPayload) -> Result<BackgroundLibraryState, String> {
-    let repo_root = resolve_repo_root()?;
+fn import_background_images(app: tauri::AppHandle, payload: ImportPayload) -> Result<BackgroundLibraryState, String> {
+    let repo_root = resolve_repo_root(Some(&app))?;
     let group_name = normalize_group_name(&payload.group_name)?;
     let group_path = background_library_dir(&repo_root).join(group_name);
     fs::create_dir_all(&group_path).map_err(|error| error.to_string())?;
@@ -308,8 +311,8 @@ fn import_background_images(payload: ImportPayload) -> Result<BackgroundLibraryS
 }
 
 #[tauri::command]
-fn clear_background_library() -> Result<BackgroundLibraryState, String> {
-    let repo_root = resolve_repo_root()?;
+fn clear_background_library(app: tauri::AppHandle) -> Result<BackgroundLibraryState, String> {
+    let repo_root = resolve_repo_root(Some(&app))?;
     let library_root = background_library_dir(&repo_root);
     ensure_library_root(&library_root)?;
     for entry in fs::read_dir(&library_root).map_err(|error| error.to_string())? {
@@ -336,8 +339,8 @@ fn clear_background_library() -> Result<BackgroundLibraryState, String> {
 
 
 #[tauri::command]
-fn clear_generated_outputs_in_rust(settings: Value) -> Result<ClearGeneratedSummary, String> {
-    let repo_root = resolve_repo_root()?;
+fn clear_generated_outputs_in_rust(app: tauri::AppHandle, settings: Value) -> Result<ClearGeneratedSummary, String> {
+    let repo_root = resolve_repo_root(Some(&app))?;
     let merged = merge_settings(default_settings(), settings);
 
     let output_dir_arg = merged
@@ -435,8 +438,8 @@ fn rebuild_cloud_image_index_in_rust(cloud_dir: String) -> Result<CloudIndexSumm
 }
 
 #[tauri::command]
-fn inspect_render_metadata_in_rust(output_dir: String) -> Result<RenderMetadataSummary, String> {
-    let repo_root = resolve_repo_root()?;
+fn inspect_render_metadata_in_rust(app: tauri::AppHandle, output_dir: String) -> Result<RenderMetadataSummary, String> {
+    let repo_root = resolve_repo_root(Some(&app))?;
     let metadata_dir = repo_root.join(output_dir.trim());
     let manifest_path = metadata_dir.join(MANIFEST_NAME);
     let render_state_path = metadata_dir.join(RENDER_STATE_NAME);
@@ -476,8 +479,9 @@ fn scan_local_markdown(payload: LocalScanPayload) -> Result<LocalScanSummary, St
 }
 
 #[tauri::command]
-fn run_generation_pipeline(settings: Value) -> Result<PipelineSummary, String> {
-    let repo_root = resolve_repo_root()?;
+fn run_generation_pipeline(app: tauri::AppHandle, settings: Value) -> Result<PipelineSummary, String> {
+    let repo_root = resolve_repo_root(Some(&app))?;
+    let resource_root = resource_root_for_app(Some(&app));
     let merged = merge_settings(default_settings(), settings);
     let notes_dir = merged
         .get("local_path")
@@ -489,6 +493,7 @@ fn run_generation_pipeline(settings: Value) -> Result<PipelineSummary, String> {
     let prepared = scan_local_markdown_summary(Path::new(notes_dir))?;
     let runtime = runtime_status_for_renderer(
         &repo_root,
+        resource_root.as_deref(),
         merged.get("formula_renderer").and_then(Value::as_str).unwrap_or("auto"),
     );
     let plan = build_render_plan(&repo_root, &merged, &runtime, &prepared.items)?;
@@ -498,7 +503,7 @@ fn run_generation_pipeline(settings: Value) -> Result<PipelineSummary, String> {
             "settings": merged.clone(),
             "items": plan.render_queue,
         });
-        let data = execute_python_api(&repo_root, "render-prepared", payload)?;
+        let data = execute_python_api(&repo_root, resource_root.as_deref(), "render-prepared", payload)?;
         if !data.success {
             return Err(
                 data.stderr
@@ -542,13 +547,14 @@ fn run_generation_pipeline(settings: Value) -> Result<PipelineSummary, String> {
 }
 
 #[tauri::command]
-fn run_python_api(request: RunPayload) -> Result<ApiResponse, String> {
-    let repo_root = resolve_repo_root()?;
-    execute_python_api(&repo_root, &request.command, request.payload)
+fn run_python_api(app: tauri::AppHandle, request: RunPayload) -> Result<ApiResponse, String> {
+    let repo_root = resolve_repo_root(Some(&app))?;
+    let resource_root = resource_root_for_app(Some(&app));
+    execute_python_api(&repo_root, resource_root.as_deref(), &request.command, request.payload)
 }
 
-fn runtime_status_for_renderer(repo_root: &Path, requested: &str) -> RuntimeStatus {
-    let python = find_python_command();
+fn runtime_status_for_renderer(repo_root: &Path, resource_root: Option<&Path>, requested: &str) -> RuntimeStatus {
+    let python = find_python_command(repo_root, resource_root);
     let python_summary = match &python {
         Some((program, prefix)) => format!("{} {}", program.display(), prefix.join(" "))
             .trim()
@@ -556,10 +562,10 @@ fn runtime_status_for_renderer(repo_root: &Path, requested: &str) -> RuntimeStat
         None => "未找到可用的 Python 解释器".to_string(),
     };
 
-    let tectonic = repo_root.join("vendor").join("tectonic").join("tectonic.exe");
-    let tectonic_exists = tectonic.exists();
-    let tectonic_summary = if tectonic_exists {
-        format!("已检测到 Tectonic：{}", tectonic.display())
+    let tectonic = resolve_tectonic_executable(repo_root, resource_root);
+    let tectonic_exists = tectonic.is_some();
+    let tectonic_summary = if let Some(path) = &tectonic {
+        format!("已检测到 Tectonic：{}", path.display())
     } else {
         "未检测到 Tectonic 可执行文件".to_string()
     };
@@ -1174,13 +1180,41 @@ fn persist_render_outputs(repo_root: &Path, settings: &Value, plan: &RenderPlan)
     Ok(())
 }
 
-fn execute_python_api(repo_root: &Path, command_name: &str, payload: Value) -> Result<ApiResponse, String> {
-    let (program, prefix) = find_python_command().ok_or_else(|| "Python executable not found in PATH or bundled Miniconda".to_string())?;
+fn execute_python_api(
+    repo_root: &Path,
+    resource_root: Option<&Path>,
+    command_name: &str,
+    payload: Value,
+) -> Result<ApiResponse, String> {
+    let (program, prefix) = find_python_command(repo_root, resource_root)
+        .ok_or_else(|| "Python executable not found in bundled resources or PATH".to_string())?;
     let mut command = Command::new(program);
     for arg in prefix {
         command.arg(arg);
     }
     command.current_dir(repo_root);
+    command.env("PYTHONUTF8", "1");
+    command.env("DAILYTIPS_RESOURCE_ROOT", repo_root);
+
+    if let Some(tectonic_path) = resolve_tectonic_executable(repo_root, resource_root) {
+        command.env("DAILYTIPS_TECTONIC", tectonic_path);
+    }
+
+    if let Some(runtime_root) = python_runtime_root(repo_root, resource_root) {
+        let mut path_entries = vec![
+            runtime_root.clone(),
+            runtime_root.join("DLLs"),
+            runtime_root.join("Library").join("bin"),
+            runtime_root.join("Scripts"),
+        ];
+        if let Some(existing_path) = std::env::var_os("PATH") {
+            path_entries.extend(std::env::split_paths(&existing_path));
+        }
+        if let Ok(joined_path) = std::env::join_paths(path_entries.iter()) {
+            command.env("PATH", joined_path);
+        }
+    }
+
     command
         .arg("-m")
         .arg("src.desktop_api")
@@ -1352,36 +1386,50 @@ fn build_item_hash(title: &str, body: &str, notes: &[String]) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-fn find_python_command() -> Option<(PathBuf, Vec<String>)> {
-    let bundled = PathBuf::from(r"D:\Applications\miniconda\python.exe");
+fn find_python_command(repo_root: &Path, resource_root: Option<&Path>) -> Option<(PathBuf, Vec<String>)> {
+    if let Ok(explicit) = std::env::var("DAILYTIPS_PYTHON_EXE") {
+        let explicit_path = PathBuf::from(explicit);
+        if python_command_ok(&explicit_path, &[]) {
+            return Some((explicit_path, Vec::new()));
+        }
+    }
+
+    if let Some(runtime_root) = python_runtime_root(repo_root, resource_root) {
+        let bundled_python = runtime_root.join("python.exe");
+        if python_command_ok(&bundled_python, &[]) {
+            return Some((bundled_python, Vec::new()));
+        }
+    }
+
     let candidates = [
         (PathBuf::from(r"D:\Applications\miniconda\python.exe"), Vec::<String>::new()),
         (PathBuf::from("python"), Vec::<String>::new()),
         (PathBuf::from("py"), vec!["-3".to_string()]),
     ];
 
-    if bundled.exists() {
-        let mut command = Command::new(&bundled);
-        let result = command.arg("--version").output();
-        if matches!(result, Ok(output) if output.status.success()) {
-            return Some((bundled, Vec::new()));
-        }
-    }
-
     for (program, prefix) in candidates {
-        let mut command = Command::new(&program);
-        for arg in &prefix {
-            command.arg(arg);
-        }
-        let result = command.arg("--version").output();
-        if matches!(result, Ok(output) if output.status.success()) {
+        if python_command_ok(&program, &prefix) {
             return Some((program, prefix));
         }
     }
     None
 }
 
-fn resolve_repo_root() -> Result<PathBuf, String> {
+fn python_command_ok(program: &Path, prefix: &[String]) -> bool {
+    let mut command = Command::new(program);
+    for arg in prefix {
+        command.arg(arg);
+    }
+    matches!(command.arg("--version").output(), Ok(output) if output.status.success())
+}
+
+fn resolve_repo_root(app: Option<&tauri::AppHandle>) -> Result<PathBuf, String> {
+    if let Some(resource_root) = resource_root_for_app(app) {
+        if resource_root.join("src").join("desktop_api.py").exists() {
+            return Ok(resource_root);
+        }
+    }
+
     if let Ok(current) = std::env::current_dir() {
         if let Some(found) = find_repo_root_from(&current) {
             return Ok(found);
@@ -1397,6 +1445,42 @@ fn resolve_repo_root() -> Result<PathBuf, String> {
     }
 
     Err("Unable to locate repository root containing src/desktop_api.py".to_string())
+}
+
+fn resource_root_for_app(app: Option<&tauri::AppHandle>) -> Option<PathBuf> {
+    app.and_then(|handle| handle.path().resource_dir().ok())
+}
+
+fn python_runtime_root(repo_root: &Path, resource_root: Option<&Path>) -> Option<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(resource_root) = resource_root {
+        candidates.push(resource_root.join("python-runtime"));
+    }
+    candidates.push(repo_root.join("python-runtime"));
+    candidates.push(repo_root.join("src-tauri").join("resources").join("python-runtime"));
+
+    candidates.into_iter().find(|path| path.join("python.exe").exists())
+}
+
+fn resolve_tectonic_executable(repo_root: &Path, resource_root: Option<&Path>) -> Option<PathBuf> {
+    if let Ok(explicit) = std::env::var("DAILYTIPS_TECTONIC") {
+        let path = PathBuf::from(explicit);
+        if path.exists() {
+            return Some(path);
+        }
+    }
+
+    let mut candidates = Vec::new();
+    if let Some(resource_root) = resource_root {
+        candidates.push(resource_root.join("vendor").join("tectonic").join("tectonic.exe"));
+        candidates.push(resource_root.join("vendor").join("tectonic").join("tectonic"));
+    }
+    candidates.push(repo_root.join("vendor").join("tectonic").join("tectonic.exe"));
+    candidates.push(repo_root.join("vendor").join("tectonic").join("tectonic"));
+    candidates.push(repo_root.join("src-tauri").join("resources").join("vendor").join("tectonic").join("tectonic.exe"));
+    candidates.push(repo_root.join("src-tauri").join("resources").join("vendor").join("tectonic").join("tectonic"));
+
+    candidates.into_iter().find(|path| path.exists())
 }
 
 fn find_repo_root_from(start: &Path) -> Option<PathBuf> {

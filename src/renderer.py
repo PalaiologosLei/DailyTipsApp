@@ -135,9 +135,17 @@ def _find_tectonic_executable() -> Path | None:
     candidates: list[Path] = []
     try:
         import os
+
         raw = os.environ.get("DAILYTIPS_TECTONIC")
         if raw:
             candidates.append(Path(raw).expanduser())
+        resource_root = os.environ.get("DAILYTIPS_RESOURCE_ROOT")
+        if resource_root:
+            resource_path = Path(resource_root).expanduser()
+            candidates.extend([
+                resource_path / "vendor" / "tectonic" / "tectonic.exe",
+                resource_path / "vendor" / "tectonic" / "tectonic",
+            ])
     except Exception:
         pass
 
@@ -149,6 +157,8 @@ def _find_tectonic_executable() -> Path | None:
         candidates.extend([
             root / "vendor" / "tectonic" / "tectonic.exe",
             root / "vendor" / "tectonic" / "tectonic",
+            root / "src-tauri" / "resources" / "vendor" / "tectonic" / "tectonic.exe",
+            root / "src-tauri" / "resources" / "vendor" / "tectonic" / "tectonic",
             root / "tools" / "tectonic" / "tectonic.exe",
             root / "tools" / "tectonic" / "tectonic",
             root / "bin" / "tectonic.exe",
